@@ -1,0 +1,29 @@
+# Dependencias
+node_modules/
+
+# Variables de entorno con secretos — NUNCA subir
+server/.env
+.env
+
+# Base de datos local (SQLite)
+server/prisma/dev.db
+server/prisma/dev.db-journal
+server/prisma/*.db
+
+# Build del frontend (se genera en CI/CD)
+client/dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Playwright
+.playwright-mcp/

@@ -1,0 +1,74 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Ticket {
+  id              Int             @id @default(autoincrement())
+  code            String          @unique
+  title           String
+  description     String
+  requesterName   String
+  requesterArea   String
+  sourceChannel   String
+  status          String          @default("open")
+  priority        String
+  impact          String
+  urgency         String
+  categoryId      Int?
+  category        Category?       @relation(fields: [categoryId], references: [id])
+  aiStatus        String          @default("not_analyzed")
+  aiProvider      String?
+  aiConfidence    String?
+  summary         String?
+  possibleCause   String?
+  responsibleArea String?
+  suggestedReply  String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  suggestedSteps  SuggestedStep[]
+  notes           TicketNote[]
+  events          TicketEvent[]
+}
+
+model Category {
+  id              Int      @id @default(autoincrement())
+  name            String   @unique
+  description     String
+  color           String
+  responsibleArea String
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tickets         Ticket[]
+}
+
+model SuggestedStep {
+  id       Int    @id @default(autoincrement())
+  ticketId Int
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  order    Int
+  text     String
+}
+
+model TicketNote {
+  id        Int      @id @default(autoincrement())
+  ticketId  Int
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  content   String
+  createdAt DateTime @default(now())
+}
+
+model TicketEvent {
+  id          Int      @id @default(autoincrement())
+  ticketId    Int
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  type        String
+  description String
+  createdAt   DateTime @default(now())
+}
