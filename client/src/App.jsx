@@ -5,11 +5,12 @@ import {
   FileText,
   LayoutDashboard,
   Loader2,
+  Menu,
   Search,
-  Settings,
   Sparkles,
   Ticket,
-  Wrench
+  Wrench,
+  X
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -38,7 +39,7 @@ const TRANSLATIONS = {
   
   // Canales
   whatsapp: "WhatsApp",
-  email: "Email",
+  email: "Correo electrónico",
   llamada: "Llamada telefónica",
   presencial: "Presencial",
   sistema_interno: "Sistema Interno",
@@ -103,7 +104,7 @@ function StatusBadge({ status }) {
 const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
 
 const navItems = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "dashboard", label: "Resumen", icon: LayoutDashboard },
   { id: "new", label: "Nuevo ticket", icon: Ticket },
   { id: "tickets", label: "Tickets", icon: Wrench },
   { id: "categories", label: "Categorías", icon: CheckCircle2 },
@@ -181,6 +182,10 @@ export function App() {
   const [ticketForm, setTicketForm] = useState(emptyTicket);
   const [analysis, setAnalysis] = useState(null);
   const [working, setWorking] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const mobileNavTriggerRef = useRef(null);
+  const mobileNavFirstItemRef = useRef(null);
+  const mobileNavDestinationRef = useRef(null);
   const formRevision = useRef(0);
   const hasLoaded = useRef(false);
 
@@ -224,6 +229,21 @@ export function App() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return undefined;
+
+    mobileNavFirstItemRef.current?.focus();
+    const handleEscape = (event) => {
+      if (event.key === "Escape") {
+        setMobileNavOpen(false);
+        mobileNavTriggerRef.current?.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [mobileNavOpen]);
 
   const filteredTickets = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -281,10 +301,24 @@ export function App() {
       <div className="min-w-0 flex-1">
         <Topbar
           title={pageTitle}
+          activeView={activeView}
+          mobileNavOpen={mobileNavOpen}
+          onMobileNavOpenChange={setMobileNavOpen}
+          mobileNavTriggerRef={mobileNavTriggerRef}
+          mobileNavFirstItemRef={mobileNavFirstItemRef}
+          mobileNavDestinationRef={mobileNavDestinationRef}
+          onNavigate={(view) => {
+            setActiveView(view);
+            setMobileNavOpen(false);
+            requestAnimationFrame(() => mobileNavDestinationRef.current?.focus());
+          }}
           aiStatus={aiStatus}
           query={query}
           onQueryChange={setQuery}
-          onNewTicket={() => setActiveView("new")}
+          onNewTicket={() => {
+            setActiveView("new");
+            setMobileNavOpen(false);
+          }}
         />
         {error ? <ErrorBanner message={error} /> : null}
         {loading ? (
@@ -361,6 +395,7 @@ function Sidebar({ activeView, onNavigate }) {
           return (
             <button
               key={item.id}
+              aria-current={active ? "page" : undefined}
               className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm transition ${
                 active ? "bg-app-accent text-white" : "text-white/72 hover:bg-white/10 hover:text-white"
               }`}
@@ -377,11 +412,53 @@ function Sidebar({ activeView, onNavigate }) {
   );
 }
 
-function Topbar({ title, aiStatus, query, onQueryChange, onNewTicket }) {
+function Topbar({ title, activeView, mobileNavOpen, onMobileNavOpenChange, mobileNavTriggerRef, mobileNavFirstItemRef, mobileNavDestinationRef, onNavigate, aiStatus, query, onQueryChange, onNewTicket }) {
   return (
     <header className="flex flex-col gap-3 border-b border-app-border bg-app-background/95 px-4 py-4 md:flex-row md:items-center md:justify-between lg:px-6">
       <div>
-        <h1 className="text-2xl font-bold leading-tight text-app-text">{title}</h1>
+        <div className="flex items-start gap-3">
+          <div className="relative lg:hidden">
+            <button
+              ref={mobileNavTriggerRef}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-app-border bg-app-surface text-app-text shadow-subtle"
+              type="button"
+              aria-label={mobileNavOpen ? "Cerrar navegación" : "Abrir navegación"}
+              aria-expanded={mobileNavOpen}
+              aria-controls="mobile-primary-navigation"
+              onClick={() => onMobileNavOpenChange(!mobileNavOpen)}
+            >
+              {mobileNavOpen ? <X size={20} aria-hidden="true" /> : <Menu size={20} aria-hidden="true" />}
+            </button>
+            {mobileNavOpen ? (
+              <nav
+                id="mobile-primary-navigation"
+                aria-label="Navegación principal"
+                className="absolute left-0 top-full z-40 mt-2 w-[min(18rem,calc(100vw-2rem))] rounded-lg border border-app-border bg-app-sidebar p-2 text-white shadow-subtle"
+              >
+                {navItems.map((item, index) => {
+                  const Icon = item.icon;
+                  const active = item.id === activeView;
+                  return (
+                    <button
+                      key={item.id}
+                      ref={index === 0 ? mobileNavFirstItemRef : undefined}
+                      aria-current={active ? "page" : undefined}
+                      className={`flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm transition ${
+                        active ? "bg-app-accent text-white" : "text-white/80 hover:bg-white/10 hover:text-white"
+                      }`}
+                      type="button"
+                      onClick={() => onNavigate(item.id)}
+                    >
+                      <Icon size={18} aria-hidden="true" />
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </nav>
+            ) : null}
+          </div>
+          <h1 ref={mobileNavDestinationRef} tabIndex={-1} className="text-2xl font-bold leading-tight text-app-text">{title}</h1>
+        </div>
         <p className="text-sm text-app-secondary">Demo con API y base de datos. Tu espacio vence en una hora. Usá datos ficticios.</p>
       </div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -680,7 +757,41 @@ function TicketList({ tickets, compact = false }) {
   }
 
   return (
-    <div className="mt-3 overflow-x-auto rounded-md border border-app-border bg-white shadow-sm">
+    <>
+      <ul className="mt-3 grid gap-3 md:hidden" aria-label="Tickets">
+        {tickets.map((ticketItem) => (
+          <li key={ticketItem.id} className="rounded-lg border border-app-border bg-white p-4 shadow-subtle">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-wide text-app-secondary">{ticketItem.code}</p>
+                <h3 className="mt-1 break-words font-semibold text-app-text">{ticketItem.title}</h3>
+              </div>
+              <StatusBadge status={ticketItem.status} />
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <PriorityBadge priority={ticketItem.priority} />
+              {ticketItem.category ? (
+                <span className="inline-flex items-center gap-1.5 rounded border border-app-border px-2 py-0.5 text-xs text-app-secondary">
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: ticketItem.category.color }} aria-hidden="true" />
+                  {ticketItem.category.name}
+                </span>
+              ) : <span className="text-xs text-app-secondary">Sin categoría</span>}
+            </div>
+            <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-app-border pt-3 text-sm">
+              <div className="min-w-0">
+                <dt className="text-xs text-app-secondary">Solicitante</dt>
+                <dd className="break-words font-medium text-app-text">{ticketItem.requesterName}</dd>
+                <dd className="break-words text-xs text-app-secondary">{ticketItem.requesterArea}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-app-secondary">Fecha</dt>
+                <dd className="font-medium text-app-text">{formatDate(ticketItem.createdAt)}</dd>
+              </div>
+            </dl>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-3 hidden overflow-x-auto rounded-md border border-app-border bg-white shadow-sm md:block">
       <table className="w-full text-left border-collapse text-sm">
         <thead>
           <tr className="bg-slate-50 border-b border-app-border text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -736,7 +847,8 @@ function TicketList({ tickets, compact = false }) {
           ))}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }
 
