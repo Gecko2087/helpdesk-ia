@@ -175,12 +175,14 @@ export function App() {
   const [categories, setCategories] = useState([]);
   const [aiStatus, setAiStatus] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [initialLoadFailed, setInitialLoadFailed] = useState(false);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [ticketForm, setTicketForm] = useState(emptyTicket);
   const [analysis, setAnalysis] = useState(null);
   const [working, setWorking] = useState(false);
   const formRevision = useRef(0);
+  const hasLoaded = useRef(false);
 
   function updateTicketForm(nextForm) {
     formRevision.current += 1;
@@ -190,6 +192,7 @@ export function App() {
 
   const loadData = useCallback(async () => {
     setLoading(true);
+    setInitialLoadFailed(false);
     setError("");
     try {
       await requestJson('/demo/session', { method: 'POST' });
@@ -199,12 +202,20 @@ export function App() {
         requestJson("/categories"),
         requestJson("/ai/status")
       ]);
+      if (!dashboardResponse.data?.metrics || !Array.isArray(ticketsResponse.data) || !Array.isArray(categoriesResponse.data) || typeof aiResponse?.demoMode !== "boolean") {
+        throw new Error("No se pudieron cargar todos los datos del espacio de prueba");
+      }
       setDashboard(dashboardResponse.data);
       setTickets(ticketsResponse.data);
       setCategories(categoriesResponse.data);
       setAiStatus(aiResponse);
+      hasLoaded.current = true;
     } catch (loadError) {
-      setError(loadError.message);
+      if (hasLoaded.current) {
+        setError(loadError.message);
+      } else {
+        setInitialLoadFailed(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -260,6 +271,10 @@ export function App() {
     }
   }
 
+  if (!hasLoaded.current && (loading || initialLoadFailed)) {
+    return <InitialAccessState loading={loading} onRetry={loadData} />;
+  }
+
   return (
     <div className="min-h-screen bg-app-background text-app-text lg:flex">
       <Sidebar activeView={activeView} onNavigate={setActiveView} />
@@ -300,6 +315,30 @@ export function App() {
         )}
       </div>
     </div>
+  );
+}
+
+function InitialAccessState({ loading, onRetry }) {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-app-background p-4 text-app-text">
+      <section className="w-full max-w-lg rounded-lg border border-app-border bg-app-surface p-6 shadow-subtle">
+        <p className="text-xs font-bold uppercase tracking-wider text-app-accent">HelpDesk IA · espacio de prueba</p>
+        {loading ? (
+          <div className="mt-5 flex items-center gap-3 text-sm text-app-secondary" role="status">
+            <Loader2 className="animate-spin" size={20} />
+            Abriendo tu espacio de prueba...
+          </div>
+        ) : (
+          <div role="alert">
+            <h1 className="mt-3 text-xl font-bold">No pudimos abrir tu espacio de prueba</h1>
+            <p className="mt-2 text-sm text-app-secondary">Los datos todavía no están disponibles. Reintentá en unos momentos; si el problema continúa, volvé más tarde.</p>
+            <button className="mt-5 rounded-md bg-app-accent px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#14874b]" type="button" onClick={onRetry}>
+              Reintentar
+            </button>
+          </div>
+        )}
+      </section>
+    </main>
   );
 }
 
@@ -369,12 +408,13 @@ function Topbar({ title, aiStatus, query, onQueryChange, onNewTicket }) {
 }
 
 function AiStatusIndicator({ aiStatus }) {
-  const demoMode = aiStatus?.demoMode ?? true;
+  const knownMode = typeof aiStatus?.demoMode === "boolean";
+  const label = !knownMode ? "Estado IA no disponible" : aiStatus.demoMode ? "Modo demo" : "Gemini activo";
   return (
     <div className="flex items-center gap-2 rounded-md border border-app-border bg-app-surface px-3 py-2 text-sm text-app-text shadow-subtle">
-      <span className={`h-2.5 w-2.5 rounded-full ${demoMode ? "bg-app-medium" : "bg-app-accent"}`} />
-      <span className="font-semibold">{demoMode ? "Modo demo" : "Gemini activo"}</span>
-      <span className="hidden text-app-secondary sm:inline">{aiStatus?.model ?? "Sin modelo"}</span>
+      <span className={`h-2.5 w-2.5 rounded-full ${knownMode && !aiStatus.demoMode ? "bg-app-accent" : "bg-app-medium"}`} />
+      <span className="font-semibold">{label}</span>
+      {aiStatus?.model ? <span className="hidden text-app-secondary sm:inline">{aiStatus.model}</span> : null}
     </div>
   );
 }
@@ -422,7 +462,7 @@ function DashboardView({ dashboard, tickets, categories, aiStatus, onNewTicket }
           <h2 className="mt-1 text-xl font-bold text-app-text">Explorá una mesa de ayuda en funcionamiento</h2>
           <p className="mt-2 max-w-2xl text-sm text-app-secondary">
             Este espacio empieza con tres tickets de ejemplo y sus categorías. Revisá el tablero y probá el análisis con un caso ficticio.
-            {aiStatus?.demoMode ? " El modo demo usa reglas locales." : " Gemini está activo para nuevos análisis."}
+            {typeof aiStatus?.demoMode === "boolean" ? (aiStatus.demoMode ? " El modo demo usa reglas locales." : " Gemini está activo para nuevos análisis.") : " El estado del análisis no está disponible."}
           </p>
         </div>
         <button className="shrink-0 rounded-md bg-app-accent px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#14874b]" type="button" onClick={onNewTicket}>
@@ -570,7 +610,9 @@ function NewTicketView({ form, setForm, analysis, aiStatus, working, onAnalyze, 
           />
         </label>
         <div className="mt-4 rounded-md border border-app-border bg-app-muted p-3 text-sm text-app-secondary">
-          {aiStatus?.demoMode ? (
+          {typeof aiStatus?.demoMode !== "boolean" ? (
+            <p>El estado del análisis no está disponible. Volvé a cargar la página antes de analizar un caso.</p>
+          ) : aiStatus.demoMode ? (
             <p>Modo demo: el análisis usa reglas locales y no envía el ticket a Gemini. Usá solo datos ficticios en este espacio público.</p>
           ) : (
             <p>
@@ -581,8 +623,8 @@ function NewTicketView({ form, setForm, analysis, aiStatus, working, onAnalyze, 
           )}
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          <button className="rounded-md bg-app-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={!canAnalyze || working} type="button" onClick={onAnalyze}>
-            {working ? "Procesando..." : aiStatus?.demoMode ? "Analizar con reglas" : "Analizar con Gemini"}
+          <button className="rounded-md bg-app-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={!canAnalyze || working || typeof aiStatus?.demoMode !== "boolean"} type="button" onClick={onAnalyze}>
+            {working ? "Procesando..." : aiStatus?.demoMode === true ? "Analizar con reglas" : aiStatus?.demoMode === false ? "Analizar con Gemini" : "Análisis no disponible"}
           </button>
           <button className="rounded-md border border-app-border px-4 py-2 text-sm font-semibold disabled:opacity-50" disabled={!analysis || working} type="button" onClick={onSave}>
             Guardar ticket
@@ -722,12 +764,14 @@ function AiConfigView({ aiStatus }) {
       <dl className="mt-4 grid gap-3 text-sm md:grid-cols-3">
         <Info label="Proveedor" value={aiStatus?.provider ?? "No configurado"} />
         <Info label="Modelo" value={aiStatus?.model ?? "-"} />
-        <Info label="Modo demo" value={aiStatus?.demoMode ? "Activo" : "Inactivo"} />
+        <Info label="Modo demo" value={typeof aiStatus?.demoMode === "boolean" ? (aiStatus.demoMode ? "Activo" : "Inactivo") : "Sin datos"} />
       </dl>
       <p className="mt-4 text-sm text-app-secondary">
-        {aiStatus?.demoMode
-          ? "Los análisis nuevos usan reglas locales. No representan respuestas de Gemini."
-          : "Los análisis nuevos usan Gemini desde el servidor. Si el proveedor falla, la respuesta muestra el respaldo por reglas."}
+        {typeof aiStatus?.demoMode !== "boolean"
+          ? "El estado del proveedor todavía no está disponible."
+          : aiStatus.demoMode
+            ? "Los análisis nuevos usan reglas locales. No representan respuestas de Gemini."
+            : "Los análisis nuevos usan Gemini desde el servidor. Si el proveedor falla, la respuesta muestra el respaldo por reglas."}
         {" "}La clave se configura solo en el backend.
       </p>
     </section>
