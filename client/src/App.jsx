@@ -191,14 +191,14 @@ export function App() {
   const [detailFeedback, setDetailFeedback] = useState("");
   const [statusDraft, setStatusDraft] = useState("open");
   const [noteDraft, setNoteDraft] = useState("");
-  const [statusWorking, setStatusWorking] = useState(false);
-  const [noteWorking, setNoteWorking] = useState(false);
+  const [detailMutation, setDetailMutation] = useState(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const mobileNavTriggerRef = useRef(null);
   const mobileNavFirstItemRef = useRef(null);
   const mobileNavDestinationRef = useRef(null);
   const formRevision = useRef(0);
   const detailRevision = useRef(0);
+  const detailMutationRef = useRef(null);
   const detailHeadingRef = useRef(null);
   const detailTriggerRef = useRef(null);
   const hasLoaded = useRef(false);
@@ -260,14 +260,19 @@ export function App() {
   }, [mobileNavOpen]);
 
   useEffect(() => {
-    if (selectedTicketId === null) return undefined;
-    requestAnimationFrame(() => detailHeadingRef.current?.focus());
+    if (activeView === "tickets" && selectedTicketId !== null) {
+      requestAnimationFrame(() => detailHeadingRef.current?.focus());
+    }
+  }, [selectedTicketId]);
+
+  useEffect(() => {
+    if (activeView !== "tickets" || selectedTicketId === null || mobileNavOpen) return undefined;
     const handleEscape = (event) => {
       if (event.key === "Escape") closeTicketDetail();
     };
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
-  }, [selectedTicketId]);
+  }, [activeView, mobileNavOpen, selectedTicketId]);
 
   const filteredTickets = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -307,7 +312,7 @@ export function App() {
       });
       updateTicketForm(emptyTicket);
       await loadData();
-      setActiveView("tickets");
+      navigateView("tickets");
     } catch (saveError) {
       setError(saveError.message);
     } finally {
@@ -324,8 +329,8 @@ export function App() {
     setDetailError("");
     setDetailFeedback("");
     setNoteDraft("");
-    setStatusWorking(false);
-    setNoteWorking(false);
+    detailMutationRef.current = null;
+    setDetailMutation(null);
     try {
       const response = await requestJson(`/tickets/${id}`);
       if (revision !== detailRevision.current) return;
@@ -338,16 +343,31 @@ export function App() {
     }
   }
 
-  function closeTicketDetail() {
+  function clearTicketDetail({ restoreFocus = false } = {}) {
+    const trigger = detailTriggerRef.current;
+    detailTriggerRef.current = null;
     detailRevision.current += 1;
+    detailMutationRef.current = null;
     setSelectedTicketId(null);
     setTicketDetail(null);
     setDetailLoading(false);
     setDetailError("");
     setDetailFeedback("");
-    setStatusWorking(false);
-    setNoteWorking(false);
-    requestAnimationFrame(() => detailTriggerRef.current?.focus());
+    setDetailMutation(null);
+    if (restoreFocus && trigger) {
+      requestAnimationFrame(() => {
+        if (trigger.isConnected && trigger.getClientRects().length > 0) trigger.focus();
+      });
+    }
+  }
+
+  function closeTicketDetail() {
+    clearTicketDetail({ restoreFocus: true });
+  }
+
+  function navigateView(view) {
+    if (view !== "tickets" && selectedTicketId !== null) clearTicketDetail();
+    setActiveView(view);
   }
 
   function mergeTicket(updatedTicket) {
@@ -356,9 +376,11 @@ export function App() {
 
   async function saveTicketStatus(event) {
     event.preventDefault();
-    if (!ticketDetail || statusDraft === ticketDetail.status) return;
+    if (!ticketDetail || statusDraft === ticketDetail.status || detailMutationRef.current) return;
     const revision = detailRevision.current;
-    setStatusWorking(true);
+    const mutation = { revision };
+    detailMutationRef.current = mutation;
+    setDetailMutation("status");
     setDetailError("");
     setDetailFeedback("");
     try {
@@ -379,16 +401,21 @@ export function App() {
     } catch (statusError) {
       if (revision === detailRevision.current) setDetailError(statusError.message);
     } finally {
-      if (revision === detailRevision.current) setStatusWorking(false);
+      if (detailMutationRef.current === mutation) {
+        detailMutationRef.current = null;
+        if (revision === detailRevision.current) setDetailMutation(null);
+      }
     }
   }
 
   async function addTicketNote(event) {
     event.preventDefault();
     const content = noteDraft.trim();
-    if (!ticketDetail || content.length < 2) return;
+    if (!ticketDetail || content.length < 2 || detailMutationRef.current) return;
     const revision = detailRevision.current;
-    setNoteWorking(true);
+    const mutation = { revision };
+    detailMutationRef.current = mutation;
+    setDetailMutation("note");
     setDetailError("");
     setDetailFeedback("");
     try {
@@ -404,7 +431,10 @@ export function App() {
     } catch (noteError) {
       if (revision === detailRevision.current) setDetailError(noteError.message);
     } finally {
-      if (revision === detailRevision.current) setNoteWorking(false);
+      if (detailMutationRef.current === mutation) {
+        detailMutationRef.current = null;
+        if (revision === detailRevision.current) setDetailMutation(null);
+      }
     }
   }
 
@@ -414,7 +444,7 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-app-background text-app-text lg:flex">
-      <Sidebar activeView={activeView} onNavigate={setActiveView} />
+      <Sidebar activeView={activeView} onNavigate={navigateView} />
       <div className="min-w-0 flex-1">
         <Topbar
           title={pageTitle}
@@ -425,7 +455,7 @@ export function App() {
           mobileNavFirstItemRef={mobileNavFirstItemRef}
           mobileNavDestinationRef={mobileNavDestinationRef}
           onNavigate={(view) => {
-            setActiveView(view);
+            navigateView(view);
             setMobileNavOpen(false);
             requestAnimationFrame(() => mobileNavDestinationRef.current?.focus());
           }}
@@ -433,7 +463,7 @@ export function App() {
           query={query}
           onQueryChange={setQuery}
           onNewTicket={() => {
-            setActiveView("new");
+            navigateView("new");
             setMobileNavOpen(false);
           }}
         />
@@ -442,7 +472,7 @@ export function App() {
           <LoadingState />
         ) : (
           <main className="p-4 lg:p-6">
-            {activeView === "dashboard" ? <DashboardView dashboard={dashboard} tickets={filteredTickets} categories={categories} aiStatus={aiStatus} onNewTicket={() => setActiveView("new")} /> : null}
+            {activeView === "dashboard" ? <DashboardView dashboard={dashboard} tickets={filteredTickets} categories={categories} aiStatus={aiStatus} onNewTicket={() => navigateView("new")} /> : null}
             {activeView === "new" ? (
               <NewTicketView
                 form={ticketForm}
@@ -469,8 +499,7 @@ export function App() {
                 detailHeadingRef={detailHeadingRef}
                 statusDraft={statusDraft}
                 noteDraft={noteDraft}
-                statusWorking={statusWorking}
-                noteWorking={noteWorking}
+                detailMutation={detailMutation}
                 onOpenTicket={openTicketDetail}
                 onCloseTicket={closeTicketDetail}
                 onRetryTicket={() => openTicketDetail(selectedTicketId, detailTriggerRef.current)}
@@ -881,8 +910,7 @@ function TicketsView({
   detailHeadingRef,
   statusDraft,
   noteDraft,
-  statusWorking,
-  noteWorking,
+  detailMutation,
   onOpenTicket,
   onCloseTicket,
   onRetryTicket,
@@ -903,8 +931,7 @@ function TicketsView({
           headingRef={detailHeadingRef}
           statusDraft={statusDraft}
           noteDraft={noteDraft}
-          statusWorking={statusWorking}
-          noteWorking={noteWorking}
+          detailMutation={detailMutation}
           onClose={onCloseTicket}
           onRetry={onRetryTicket}
           onStatusDraftChange={onStatusDraftChange}
@@ -926,8 +953,7 @@ function TicketDetail({
   headingRef,
   statusDraft,
   noteDraft,
-  statusWorking,
-  noteWorking,
+  detailMutation,
   onClose,
   onRetry,
   onStatusDraftChange,
@@ -1019,23 +1045,23 @@ function TicketDetail({
           <div className="grid gap-4 lg:grid-cols-2">
             <form className="rounded-md border border-app-border p-3" onSubmit={onSaveStatus}>
               <label className="block text-sm font-bold" htmlFor="ticket-status">Estado</label>
-              <select id="ticket-status" className="mt-2 h-10 w-full rounded-md border border-app-border bg-white px-3 text-sm" value={statusDraft} onChange={(event) => onStatusDraftChange(event.target.value)}>
+              <select id="ticket-status" className="mt-2 h-10 w-full rounded-md border border-app-border bg-white px-3 text-sm disabled:opacity-50" value={statusDraft} disabled={detailMutation !== null} onChange={(event) => onStatusDraftChange(event.target.value)}>
                 {ticketStatuses.map((status) => <option key={status} value={status}>{translate(status)}</option>)}
               </select>
-              <button className="mt-3 rounded-md bg-app-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" type="submit" disabled={statusWorking || statusDraft === ticket.status}>
-                {statusWorking ? "Guardando..." : "Guardar estado"}
+              <button className="mt-3 rounded-md bg-app-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" type="submit" disabled={detailMutation !== null || statusDraft === ticket.status}>
+                {detailMutation === "status" ? "Guardando..." : "Guardar estado"}
               </button>
             </form>
 
             <form className="rounded-md border border-app-border p-3" onSubmit={onAddNote}>
               <label className="block text-sm font-bold" htmlFor="ticket-note">Nota interna ficticia</label>
-              <textarea id="ticket-note" className="mt-2 min-h-24 w-full rounded-md border border-app-border px-3 py-2 text-sm" maxLength={2000} value={noteDraft} onChange={(event) => onNoteDraftChange(event.target.value)} />
+              <textarea id="ticket-note" className="mt-2 min-h-24 w-full rounded-md border border-app-border px-3 py-2 text-sm disabled:opacity-50" maxLength={2000} value={noteDraft} disabled={detailMutation !== null} onChange={(event) => onNoteDraftChange(event.target.value)} />
               <div className="mt-1 flex justify-between gap-3 text-xs text-app-secondary">
                 <span>Usá solo datos ficticios.</span>
                 <span>{noteDraft.length}/2000</span>
               </div>
-              <button className="mt-3 rounded-md bg-app-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" type="submit" disabled={noteWorking || noteDraft.trim().length < 2}>
-                {noteWorking ? "Agregando..." : "Agregar nota"}
+              <button className="mt-3 rounded-md bg-app-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" type="submit" disabled={detailMutation !== null || noteDraft.trim().length < 2}>
+                {detailMutation === "note" ? "Agregando..." : "Agregar nota"}
               </button>
             </form>
           </div>
