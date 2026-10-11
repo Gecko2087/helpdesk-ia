@@ -37,6 +37,25 @@ describe("Gemini analysis service", () => {
     urgency: "medium"
   };
 
+  it("does not transmit the requester name to Gemini", () => {
+    expect(buildGeminiPrompt(ticket)).not.toContain(ticket.requesterName);
+    expect(buildGeminiPrompt(ticket)).toContain("requiere revision humana");
+  });
+
+  it("rejects non-object and oversized model responses", () => {
+    for (const value of ["null", "[]", "1", "x".repeat(16001)]) {
+      expect(() => parseGeminiJson(value)).toThrow();
+    }
+  });
+
+  it("bounds untrusted model fields and rejects objects as display text", () => {
+    const result = normalizeAiAnalysis({ summary: { unsafe: true }, suggestedSteps: [null, {}, "Verify"], missingInfo: [42], responsibleArea: "A".repeat(500) });
+    expect(typeof result.summary).toBe("string");
+    expect(result.suggestedSteps).toEqual(["Verify"]);
+    expect(result.missingInfo).toEqual([]);
+    expect(result.responsibleArea).toHaveLength(120);
+  });
+
   it("builds a prompt that requires valid JSON and includes ticket data", () => {
     const prompt = buildGeminiPrompt(ticket);
 
