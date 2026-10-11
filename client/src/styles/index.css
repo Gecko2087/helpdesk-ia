@@ -22,3 +22,12 @@ button,
 input {
   font: inherit;
 }
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 3px solid #087a43;
+  outline-offset: 2px;
+}
