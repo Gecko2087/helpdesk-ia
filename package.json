@@ -5,7 +5,7 @@
   "type": "module",
   "description": "HelpDesk IA - monorepo full stack para mesa de ayuda con asistencia de IA.",
   "engines": {
-    "node": ">=22.12"
+    "node": "22.x"
   },
   "scripts": {
     "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
