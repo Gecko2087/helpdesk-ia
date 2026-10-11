@@ -409,7 +409,7 @@ function Topbar({ title, aiStatus, query, onQueryChange, onNewTicket }) {
 
 function AiStatusIndicator({ aiStatus }) {
   const knownMode = typeof aiStatus?.demoMode === "boolean";
-  const label = !knownMode ? "Estado IA no disponible" : aiStatus.demoMode ? "Modo demo" : "Gemini activo";
+  const label = !knownMode ? "Estado IA no disponible" : aiStatus.demoMode ? "Modo demo" : "Gemini configurado";
   return (
     <div className="flex items-center gap-2 rounded-md border border-app-border bg-app-surface px-3 py-2 text-sm text-app-text shadow-subtle">
       <span className={`h-2.5 w-2.5 rounded-full ${knownMode && !aiStatus.demoMode ? "bg-app-accent" : "bg-app-medium"}`} />
@@ -462,7 +462,7 @@ function DashboardView({ dashboard, tickets, categories, aiStatus, onNewTicket }
           <h2 className="mt-1 text-xl font-bold text-app-text">Explorá una mesa de ayuda en funcionamiento</h2>
           <p className="mt-2 max-w-2xl text-sm text-app-secondary">
             Este espacio empieza con tres tickets de ejemplo y sus categorías. Revisá el tablero y probá el análisis con un caso ficticio.
-            {typeof aiStatus?.demoMode === "boolean" ? (aiStatus.demoMode ? " El modo demo usa reglas locales." : " Gemini está activo para nuevos análisis.") : " El estado del análisis no está disponible."}
+            {typeof aiStatus?.demoMode === "boolean" ? (aiStatus.demoMode ? " El modo demo usa reglas locales." : " Gemini está configurado para nuevos análisis; cada resultado indica el proveedor que respondió.") : " El estado del análisis no está disponible."}
           </p>
         </div>
         <button className="shrink-0 rounded-md bg-app-accent px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#14874b]" type="button" onClick={onNewTicket}>
@@ -618,7 +618,7 @@ function NewTicketView({ form, setForm, analysis, aiStatus, working, onAnalyze, 
             <p>
               Antes de analizar: usá solo datos ficticios. El título, la descripción, el área y otros detalles del caso se envían desde el servidor a Google Gemini.
               Google indica que el contenido del nivel gratuito puede usarse para mejorar sus productos.{' '}
-              <a className="font-semibold text-app-accent underline" href="https://ai.google.dev/gemini-api/docs/pricing#gemini-2.5-flash" target="_blank" rel="noreferrer">Ver política de Google</a>.
+              <a className="font-semibold text-app-accent underline" href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noreferrer">Ver política de Google</a>.
             </p>
           )}
         </div>
@@ -771,7 +771,7 @@ function AiConfigView({ aiStatus }) {
           ? "El estado del proveedor todavía no está disponible."
           : aiStatus.demoMode
             ? "Los análisis nuevos usan reglas locales. No representan respuestas de Gemini."
-            : "Los análisis nuevos usan Gemini desde el servidor. Si el proveedor falla, la respuesta muestra el respaldo por reglas."}
+            : "Los análisis nuevos intentan usar Gemini desde el servidor. Si el proveedor falla, la respuesta muestra el respaldo por reglas."}
         {" "}La clave se configura solo en el backend.
       </p>
     </section>
@@ -783,7 +783,7 @@ function DocsView() {
     <section className="rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle">
       <h2 className="text-base font-bold">Documentación del proyecto</h2>
       <p className="mt-2 text-sm text-app-secondary">Cada visitante recibe un espacio aislado de una hora con tres tickets ficticios. Podés analizar un ejemplo, guardar otro ticket y ver cómo cambia el tablero.</p>
-      <p className="mt-2 text-sm text-app-secondary">El modo demo genera sugerencias con reglas. Si Gemini está activo, el servidor envía los datos del caso a Google y muestra el proveedor en cada resultado. Revisá siempre la sugerencia antes de usarla.</p>
+      <p className="mt-2 text-sm text-app-secondary">El modo demo genera sugerencias con reglas. Si Gemini está configurado, el servidor intenta enviar los datos del caso a Google y muestra el proveedor real en cada resultado. Revisá siempre la sugerencia antes de usarla.</p>
     </section>
   );
 }

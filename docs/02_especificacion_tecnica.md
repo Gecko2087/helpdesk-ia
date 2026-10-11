@@ -161,7 +161,7 @@ PORT=3001
 NODE_ENV="development"
 AI_PROVIDER="gemini"
 GEMINI_API_KEY=""
-GEMINI_MODEL="gemini-2.5-flash-lite"
+GEMINI_MODEL="gemini-3.5-flash-lite"
 CLIENT_URL="http://localhost:5173"
 ```
 

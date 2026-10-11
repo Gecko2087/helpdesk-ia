@@ -15,10 +15,10 @@ Nunca exponer `GEMINI_API_KEY` en el frontend.
 Usar un modelo rápido y económico para pruebas:
 
 ```env
-GEMINI_MODEL="gemini-2.5-flash-lite"
+GEMINI_MODEL="gemini-3.5-flash-lite"
 ```
 
-Si ese modelo no está disponible, permitir cambiarlo desde variable de entorno.
+Google recomienda Gemini 3.5 Flash-Lite para proyectos nuevos y limita el acceso a los modelos 2.5 a proyectos con uso previo. Si el modelo configurado no está disponible para la cuenta, cambiarlo mediante la variable de entorno. La configuración no garantiza que cada respuesta use Gemini: el backend informa el proveedor real y señala cuando usa reglas como respaldo.
 
 ## Proveedores soportados
 
@@ -105,7 +105,6 @@ Confianza permitida:
 Ticket:
 Título: {{title}}
 Descripción: {{description}}
-Solicitante: {{requesterName}}
 Área: {{requesterArea}}
 Canal: {{sourceChannel}}
 Impacto inicial: {{impact}}
