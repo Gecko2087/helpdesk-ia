@@ -21,7 +21,7 @@ npm ci --prefix server
 npm ci --prefix client
 ```
 
-Copiá `server/.env.example` a `server/.env` y configurá `DATABASE_URL` con la URL de esa base PostgreSQL, `CLIENT_URL=http://localhost:5173` y `NODE_ENV=development`. La plantilla deja la clave Gemini vacía para usar reglas locales. Para activar Gemini, configurá `AI_PROVIDER=gemini`, `GEMINI_API_KEY` solo en el servidor y un `GEMINI_MODEL` habilitado para tu cuenta. `gemini-2.5-flash` es un ejemplo documentado por Google; el modelo disponible y la cuota concreta se comprueban en Google AI Studio.
+Copiá `server/.env.example` a `server/.env` y configurá `DATABASE_URL` con la URL de esa base PostgreSQL, `CLIENT_URL=http://localhost:5173` y `NODE_ENV=development`. La plantilla deja la clave Gemini vacía para usar reglas locales. Para intentar análisis con Gemini, configurá `AI_PROVIDER=gemini`, `GEMINI_API_KEY` solo en el servidor y un `GEMINI_MODEL` habilitado para tu cuenta. El valor predeterminado es [`gemini-3.5-flash-lite`](https://ai.google.dev/gemini-api/docs/models), recomendado por Google para proyectos nuevos; la disponibilidad y cuota efectiva se comprueban en Google AI Studio. Configurar el proveedor no garantiza que cada análisis use Gemini: cada respuesta indica si provino de Gemini o del respaldo por reglas.
 
 Prepará la base y arrancá ambos procesos:
 
@@ -45,7 +45,7 @@ El script de pruebas crea una base SQLite temporal, ejecuta las pruebas HTTP y r
 
 El procedimiento previsto usa Vercel para la aplicación y una base PostgreSQL aparte. Primero se aplican las migraciones con `npm run db:deploy --prefix server` sobre una base nueva; luego se configura `CLIENT_URL` con el origen exacto de la aplicación. El archivo [`DEPLOYMENT.md`](./DEPLOYMENT.md) detalla las variables, cuotas y comprobaciones pendientes. No hay una URL de producción confirmada para esta aplicación.
 
-Gemini está sujeto a los [límites reales de la cuenta y del modelo](https://ai.google.dev/gemini-api/docs/rate-limits). La aplicación limita por defecto a 20 análisis Gemini diarios entre todos los visitantes; `GEMINI_DAILY_ANALYSIS_LIMIT` permite fijar un valor acorde a AI Studio. Además, cada sesión admite 10 análisis y el servicio crea como máximo 100 sesiones nuevas por día. Google indica en su [tabla de precios](https://ai.google.dev/gemini-api/docs/pricing#gemini-2.5-flash) que el contenido del nivel gratuito puede usarse para mejorar sus productos. Usá exclusivamente datos ficticios.
+Gemini está sujeto a los [límites reales de la cuenta y del modelo](https://ai.google.dev/gemini-api/docs/rate-limits). La aplicación limita por defecto a 20 análisis Gemini diarios entre todos los visitantes; `GEMINI_DAILY_ANALYSIS_LIMIT` permite fijar un valor acorde a AI Studio. Además, cada sesión admite 10 análisis y el servicio crea como máximo 100 sesiones nuevas por día. Google indica en su [tabla de precios](https://ai.google.dev/gemini-api/docs/pricing) que el contenido del nivel gratuito de Gemini 3.5 Flash-Lite puede usarse para mejorar sus productos. Usá exclusivamente datos ficticios.
 
 ## Estructura
 

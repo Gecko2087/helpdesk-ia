@@ -108,7 +108,7 @@ Para que no parezca una plantilla genérica, incluir:
 
 Un indicador en el header:
 
-- `Gemini activo`
+- `Gemini configurado`
 - `Modo demo`
 - `Sin configurar`
 
