@@ -515,6 +515,7 @@ function DashboardView({ dashboard, tickets, categories, aiStatus, onNewTicket }
     if (!dashboard?.byCategory) return [];
     return dashboard.byCategory;
   }, [dashboard]);
+  const totalCategoryTickets = categoryChartData.reduce((total, entry) => total + entry.count, 0);
 
   const priorityChartData = useMemo(() => {
     if (!dashboard?.byPriority) return [];
@@ -546,7 +547,7 @@ function DashboardView({ dashboard, tickets, categories, aiStatus, onNewTicket }
           Probar un análisis
         </button>
       </section>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricTile label="Total tickets" value={metrics.totalTickets ?? 0} detail="Tickets registrados" />
         <MetricTile label="Abiertos" value={metrics.openTickets ?? 0} detail="Pendientes de atención" />
         <MetricTile label="En progreso" value={metrics.inProgressTickets ?? 0} detail="En tratamiento" />
@@ -554,40 +555,54 @@ function DashboardView({ dashboard, tickets, categories, aiStatus, onNewTicket }
       </div>
 
       {/* Gráficos de Recharts */}
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <section className="rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle flex flex-col min-h-[300px]">
+      <div className="mt-4 grid min-w-0 gap-4 md:grid-cols-2">
+        <section className="min-w-0 rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle flex flex-col min-h-[300px]">
           <h2 className="text-sm font-bold text-app-text mb-4 uppercase tracking-wider text-slate-500">Distribución por Categoría</h2>
-          <div className="flex-1 w-full min-h-[200px] flex items-center justify-center">
+          <div className="flex min-w-0 w-full flex-1 flex-col items-center justify-center gap-3">
             {categoryChartData.length === 0 ? (
               <p className="text-sm text-app-secondary">Sin datos de categorías</p>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={categoryChartData}
-                    dataKey="count"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={75}
-                    paddingAngle={3}
-                    label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
-                  >
-                    {categoryChartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={getCategoryColor(entry.name)} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value) => [`${value} tickets`, "Cantidad"]} />
-                </PieChart>
-              </ResponsiveContainer>
+              <>
+                <div className="h-[190px] w-full min-w-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={categoryChartData}
+                        dataKey="count"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={75}
+                        paddingAngle={3}
+                      >
+                        {categoryChartData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={getCategoryColor(entry.name)} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value) => [`${value} tickets`, "Cantidad"]} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <ul className="grid w-full min-w-0 grid-cols-1 gap-x-3 gap-y-1.5 sm:grid-cols-2" aria-label="Categorías y cantidad de tickets">
+                  {categoryChartData.map((entry, index) => (
+                    <li key={`category-legend-${index}`} className="flex min-w-0 items-start gap-2 text-xs text-app-secondary">
+                      <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: getCategoryColor(entry.name) }} aria-hidden="true" />
+                      <span className="min-w-0 flex-1 break-words">{entry.name}</span>
+                      <span className="shrink-0 font-semibold text-app-text">
+                        {entry.count} ({totalCategoryTickets ? Math.round((entry.count / totalCategoryTickets) * 100) : 0}%)
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
           </div>
         </section>
 
-        <section className="rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle flex flex-col min-h-[300px]">
+        <section className="min-w-0 rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle flex flex-col min-h-[300px]">
           <h2 className="text-sm font-bold text-app-text mb-4 uppercase tracking-wider text-slate-500">Distribución por Prioridad</h2>
-          <div className="flex-1 w-full min-h-[200px] flex items-center justify-center">
+          <div className="flex h-[220px] min-w-0 w-full items-center justify-center">
             {priorityChartData.length === 0 ? (
               <p className="text-sm text-app-secondary">Sin datos de prioridad</p>
             ) : (
@@ -608,12 +623,12 @@ function DashboardView({ dashboard, tickets, categories, aiStatus, onNewTicket }
         </section>
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_340px]">
-        <section className="rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle">
+      <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-[1fr_340px]">
+        <section className="min-w-0 rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle">
           <h2 className="text-base font-bold text-app-text">Tickets recientes</h2>
           <TicketList tickets={tickets.slice(0, 6)} compact />
         </section>
-        <section className="rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle">
+        <section className="min-w-0 rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle">
           <div className="flex items-center gap-2">
             <AlertTriangle className="text-app-high" size={18} />
             <h2 className="text-base font-bold text-app-text">Riesgos del día</h2>
@@ -718,7 +733,7 @@ function NewTicketView({ form, setForm, analysis, aiStatus, working, onAnalyze, 
 
 function TicketsView({ tickets }) {
   return (
-    <section className="rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle">
+    <section className="min-w-0 rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle">
       <h2 className="mb-3 text-base font-bold">Historial de tickets</h2>
       <TicketList tickets={tickets} />
     </section>
@@ -732,21 +747,21 @@ function TicketList({ tickets, compact = false }) {
 
   if (compact) {
     return (
-      <div className="mt-3 divide-y divide-app-border overflow-hidden rounded-md border border-app-border bg-white">
+      <div className="mt-3 min-w-0 divide-y divide-app-border overflow-hidden rounded-md border border-app-border bg-white">
         {tickets.map((ticketItem) => (
-          <div key={ticketItem.id} className="flex items-center justify-between p-3 text-sm hover:bg-slate-50 transition-colors">
-            <div className="flex flex-col gap-0.5 min-w-0 flex-1 pr-3">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-slate-700">{ticketItem.code}</span>
-                <span className="truncate text-slate-800 font-medium">{ticketItem.title}</span>
+          <div key={ticketItem.id} className="flex min-w-0 flex-col gap-2 p-3 text-sm transition-colors hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 w-full flex-1 flex-col gap-1 sm:pr-3">
+              <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                <span className="min-w-0 max-w-full break-all font-semibold text-slate-700">{ticketItem.code}</span>
+                <span className="min-w-0 break-words font-medium text-slate-800">{ticketItem.title}</span>
               </div>
-              <div className="flex items-center gap-2 text-xs text-app-secondary">
-                <span>{ticketItem.requesterName}</span>
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-app-secondary">
+                <span className="min-w-0 break-words">{ticketItem.requesterName}</span>
                 <span>•</span>
-                <span>{formatDate(ticketItem.createdAt)}</span>
+                <span className="min-w-0 break-words">{formatDate(ticketItem.createdAt)}</span>
               </div>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex w-full shrink-0 flex-wrap items-center gap-1.5 sm:w-auto sm:justify-end">
               <PriorityBadge priority={ticketItem.priority} />
               <StatusBadge status={ticketItem.status} />
             </div>
@@ -758,22 +773,22 @@ function TicketList({ tickets, compact = false }) {
 
   return (
     <>
-      <ul className="mt-3 grid gap-3 md:hidden" aria-label="Tickets">
+      <ul className="mt-3 grid min-w-0 gap-3 md:hidden" aria-label="Tickets">
         {tickets.map((ticketItem) => (
-          <li key={ticketItem.id} className="rounded-lg border border-app-border bg-white p-4 shadow-subtle">
-            <div className="flex items-start justify-between gap-3">
+          <li key={ticketItem.id} className="min-w-0 rounded-lg border border-app-border bg-white p-4 shadow-subtle">
+            <div className="flex min-w-0 items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-xs font-bold uppercase tracking-wide text-app-secondary">{ticketItem.code}</p>
+                <p className="max-w-full break-all text-xs font-bold uppercase tracking-wide text-app-secondary">{ticketItem.code}</p>
                 <h3 className="mt-1 break-words font-semibold text-app-text">{ticketItem.title}</h3>
               </div>
-              <StatusBadge status={ticketItem.status} />
+              <div className="shrink-0"><StatusBadge status={ticketItem.status} /></div>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <PriorityBadge priority={ticketItem.priority} />
               {ticketItem.category ? (
-                <span className="inline-flex items-center gap-1.5 rounded border border-app-border px-2 py-0.5 text-xs text-app-secondary">
-                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: ticketItem.category.color }} aria-hidden="true" />
-                  {ticketItem.category.name}
+                <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded border border-app-border px-2 py-0.5 text-xs text-app-secondary">
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: ticketItem.category.color }} aria-hidden="true" />
+                  <span className="min-w-0 break-words">{ticketItem.category.name}</span>
                 </span>
               ) : <span className="text-xs text-app-secondary">Sin categoría</span>}
             </div>
@@ -783,15 +798,15 @@ function TicketList({ tickets, compact = false }) {
                 <dd className="break-words font-medium text-app-text">{ticketItem.requesterName}</dd>
                 <dd className="break-words text-xs text-app-secondary">{ticketItem.requesterArea}</dd>
               </div>
-              <div>
+              <div className="min-w-0">
                 <dt className="text-xs text-app-secondary">Fecha</dt>
-                <dd className="font-medium text-app-text">{formatDate(ticketItem.createdAt)}</dd>
+                <dd className="break-words font-medium text-app-text">{formatDate(ticketItem.createdAt)}</dd>
               </div>
             </dl>
           </li>
         ))}
       </ul>
-      <div className="mt-3 hidden overflow-x-auto rounded-md border border-app-border bg-white shadow-sm md:block">
+      <div className="mt-3 hidden min-w-0 overflow-x-auto rounded-md border border-app-border bg-white shadow-sm md:block">
       <table className="w-full text-left border-collapse text-sm">
         <thead>
           <tr className="bg-slate-50 border-b border-app-border text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -854,15 +869,15 @@ function TicketList({ tickets, compact = false }) {
 
 function CategoriesView({ categories }) {
   return (
-    <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+    <section className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-3">
       {categories.map((category) => (
-        <div key={category.id} className="rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle">
+        <div key={category.id} className="min-w-0 rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle">
           <div className="mb-2 flex items-center gap-2">
             <span className="h-3 w-3 rounded-full" style={{ background: category.color }} />
-            <h2 className="font-bold">{category.name}</h2>
+            <h2 className="min-w-0 break-words font-bold">{category.name}</h2>
           </div>
-          <p className="text-sm text-app-secondary">{category.description}</p>
-          <p className="mt-3 text-xs font-semibold text-app-text">{category.responsibleArea}</p>
+          <p className="break-words text-sm text-app-secondary">{category.description}</p>
+          <p className="mt-3 break-words text-xs font-semibold text-app-text">{category.responsibleArea}</p>
         </div>
       ))}
     </section>
