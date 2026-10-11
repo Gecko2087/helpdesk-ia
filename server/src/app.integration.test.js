@@ -1,8 +1,13 @@
 import request from "supertest";
 import { beforeEach, describe, expect, it } from "vitest";
+import assert from 'node:assert/strict';
 
 import { app } from "./app.js";
 import { prisma } from "./config/prisma.js";
+
+assert.equal(process.env.NODE_ENV, 'test');
+assert.match(process.env.DATABASE_URL ?? '', /^file:.*helpdesk-test-/);
+let client;
 
 describe("backend API", () => {
   beforeEach(async () => {
@@ -11,10 +16,26 @@ describe("backend API", () => {
     await prisma.suggestedStep.deleteMany();
     await prisma.ticket.deleteMany();
     await prisma.category.deleteMany();
+    await prisma.sandbox.deleteMany();
+    await prisma.demoBudget.deleteMany();
+    client = request.agent(app);
+    await client.post('/api/demo/session').set('Origin', 'http://localhost:3001');
+  });
+
+  it("allows credentialed requests only from configured development origins", async () => {
+    const allowed = await request(app).options('/api/tickets')
+      .set('Origin', 'http://localhost:3001')
+      .set('Access-Control-Request-Method', 'POST');
+    expect(allowed.headers['access-control-allow-origin']).toBe('http://localhost:3001');
+    expect(allowed.headers['access-control-allow-credentials']).toBe('true');
+    const other = await request(app).options('/api/tickets')
+      .set('Origin', 'https://other.example')
+      .set('Access-Control-Request-Method', 'POST');
+    expect(other.headers['access-control-allow-origin']).toBeUndefined();
   });
 
   it("reports IA provider status without exposing secrets", async () => {
-    const response = await request(app).get("/api/ai/status");
+    const response = await client.get("/api/ai/status");
 
     expect(response.status).toBe(200);
     expect(["demo", "gemini"]).toContain(response.body.provider);
@@ -24,9 +45,9 @@ describe("backend API", () => {
   });
 
   it("creates and lists categories", async () => {
-    const createResponse = await request(app).post("/api/categories").send({
-      name: "Red e Internet",
-      description: "Problemas de conectividad y red",
+    const createResponse = await client.post("/api/categories").set('Origin', 'http://localhost:3001').send({
+      name: "Hardware",
+      description: "Equipos de prueba",
       color: "#00A7A7",
       responsibleArea: "Soporte Tecnico",
       active: true
@@ -34,24 +55,17 @@ describe("backend API", () => {
 
     expect(createResponse.status).toBe(201);
 
-    const listResponse = await request(app).get("/api/categories");
+    const listResponse = await client.get("/api/categories");
 
     expect(listResponse.status).toBe(200);
-    expect(listResponse.body.data).toHaveLength(1);
-    expect(listResponse.body.data[0].name).toBe("Red e Internet");
+    expect(listResponse.body.data).toHaveLength(4);
+    expect(listResponse.body.data.some(category => category.name === "Hardware")).toBe(true);
   });
 
   it("creates a ticket with code, event and suggested steps", async () => {
-    const category = await prisma.category.create({
-      data: {
-        name: "Accesos y usuarios",
-        description: "Altas, bloqueos y permisos",
-        color: "#18A058",
-        responsibleArea: "Mesa de ayuda"
-      }
-    });
+    const category = await prisma.category.findFirst({ where: { name: "Accesos y usuarios" } });
 
-    const response = await request(app).post("/api/tickets").send({
+    const response = await client.post("/api/tickets").set('Origin', 'http://localhost:3001').send({
       title: "Usuario bloqueado en CRM",
       description: "No puedo ingresar al CRM porque el sistema indica usuario bloqueado.",
       requesterName: "Ana Gomez",
@@ -77,22 +91,13 @@ describe("backend API", () => {
       status: "open"
     });
     expect(["analyzed", "demo"]).toContain(response.body.data.aiStatus);
-    expect(response.body.data.code).toMatch(/^HD-\d{4}$/);
+    expect(response.body.data.code).toMatch(/^HD-[A-F0-9]{32}$/);
     expect(response.body.data.suggestedSteps).toHaveLength(2);
     expect(response.body.data.events[0].type).toBe("created");
   });
 
   it("links ticket category from AI analysis when categoryId is omitted", async () => {
-    await prisma.category.create({
-      data: {
-        name: "Red e Internet",
-        description: "Conectividad",
-        color: "#00A7A7",
-        responsibleArea: "Infraestructura"
-      }
-    });
-
-    const response = await request(app).post("/api/tickets").send({
+    const response = await client.post("/api/tickets").set('Origin', 'http://localhost:3001').send({
       title: "No tengo internet",
       description: "No tengo conexion a internet en mi computadora desde esta manana.",
       requesterName: "Juan Diaz",
@@ -120,7 +125,7 @@ describe("backend API", () => {
   });
 
   it("filters tickets and updates ticket status", async () => {
-    const createResponse = await request(app).post("/api/tickets").send({
+    const createResponse = await client.post("/api/tickets").set('Origin', 'http://localhost:3001').send({
       title: "No tengo internet",
       description: "No tengo conexion a internet en mi computadora desde esta manana.",
       requesterName: "Juan Diaz",
@@ -132,12 +137,13 @@ describe("backend API", () => {
 
     const ticketId = createResponse.body.data.id;
 
-    const listResponse = await request(app).get("/api/tickets?status=open&search=internet");
+    const listResponse = await client.get("/api/tickets?status=open&search=internet");
     expect(listResponse.status).toBe(200);
     expect(listResponse.body.data).toHaveLength(1);
 
-    const statusResponse = await request(app)
+    const statusResponse = await client
       .patch(`/api/tickets/${ticketId}/status`)
+      .set('Origin', 'http://localhost:3001')
       .send({ status: "in_progress" });
 
     expect(statusResponse.status).toBe(200);
@@ -145,7 +151,7 @@ describe("backend API", () => {
   });
 
   it("returns dashboard metrics", async () => {
-    await request(app).post("/api/tickets").send({
+    await client.post("/api/tickets").set('Origin', 'http://localhost:3001').send({
       title: "Impresora no responde",
       description: "La impresora de administracion no responde al enviar documentos.",
       requesterName: "Maria Ruiz",
@@ -155,11 +161,11 @@ describe("backend API", () => {
       urgency: "medium"
     });
 
-    const response = await request(app).get("/api/dashboard");
+    const response = await client.get("/api/dashboard");
 
     expect(response.status).toBe(200);
-    expect(response.body.data.metrics.totalTickets).toBe(1);
-    expect(response.body.data.metrics.openTickets).toBe(1);
-    expect(response.body.data.recentTickets).toHaveLength(1);
+    expect(response.body.data.metrics.totalTickets).toBe(4);
+    expect(response.body.data.metrics.openTickets).toBe(2);
+    expect(response.body.data.recentTickets).toHaveLength(4);
   });
 });

@@ -12,6 +12,7 @@ import { dashboardRouter } from "./routes/dashboard.routes.js";
 import { healthRouter } from "./routes/health.routes.js";
 import { ticketRouter } from "./routes/ticket.routes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { sandboxMiddleware } from './middleware/sandbox.js';
 
 export const app = express();
 
@@ -31,19 +32,30 @@ app.use(
   cors({
     origin: isProduction
       ? env.clientUrl
-      : [env.clientUrl, "http://localhost:5173", "http://localhost:5174", "http://localhost:3001"]
+      : [env.clientUrl, "http://localhost:5173", "http://localhost:5174", "http://localhost:3001"],
+    credentials: true
   })
 );
-app.use(express.json());
+app.use(express.json({ limit: '24kb' }));
 
 app.use("/api/health", healthRouter);
+app.use('/api', sandboxMiddleware);
+app.use('/api', (req, res, next) => {
+  for (const value of Object.values(req.query)) {
+    if (typeof value !== 'string' || value.length > 160) return res.status(400).json({ error: 'Filtro inválido' });
+  }
+  next();
+});
 app.use("/api/ai", aiRouter);
 app.use("/api/dashboard", dashboardRouter);
 app.use("/api/tickets", ticketRouter);
 app.use("/api/categories", categoryRouter);
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: 'Ruta de API no encontrada' });
+});
 
 // Servir frontend compilado en producción
-if (isProduction && existsSync(clientDistPath)) {
+if ((isProduction || process.env.SERVE_CLIENT === 'true') && existsSync(clientDistPath)) {
   app.use(express.static(clientDistPath));
 
   // Catch-all: devolver index.html para que React Router maneje las rutas del cliente
