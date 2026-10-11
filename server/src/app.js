@@ -4,6 +4,7 @@ import helmet from "helmet";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 
 import { env } from "./config/env.js";
 import { aiRouter } from "./routes/ai.routes.js";
@@ -21,6 +22,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // En producción el frontend compilado vive en client/dist relativo a la raíz del repo.
 // Railway corre desde la raíz del monorepo, así que subimos dos niveles desde server/src/.
 const clientDistPath = join(__dirname, "../../client/dist");
+const clientAssetsPath = join(clientDistPath, "assets");
+const clientIndexPath = join(clientDistPath, "index.html");
 const isProduction = env.nodeEnv === "production";
 
 app.use(helmet({
@@ -56,12 +59,22 @@ app.use('/api', (_req, res) => {
 
 // Servir frontend compilado en producción
 if ((isProduction || process.env.SERVE_CLIENT === 'true') && existsSync(clientDistPath)) {
-  app.use(express.static(clientDistPath));
+  // Vite fingerprints assets, so they can be cached across deployments. Missing
+  // fingerprints must fail rather than receiving the SPA's HTML as JavaScript.
+  app.use('/assets', express.static(clientAssetsPath, { immutable: true, maxAge: '1y' }));
+  app.use('/assets', (_req, res) => res.status(404).send('Asset no encontrado'));
 
-  // Catch-all: devolver index.html para que React Router maneje las rutas del cliente
-  app.get(/.*/, (_req, res) => {
-    res.sendFile(join(clientDistPath, "index.html"));
-  });
+  const sendIndex = async (_req, res) => {
+    // Git archives preserve file timestamps. A validator derived from index.html
+    // could otherwise return 304 for a different deployment with the same mtime.
+    const html = await readFile(clientIndexPath);
+    res.type('html').set('Cache-Control', 'no-store').end(html);
+  };
+  app.get('/index.html', sendIndex);
+  app.use(express.static(clientDistPath, { index: false }));
+
+  // Catch-all for client routes. HTML is never reusable across deployments.
+  app.get(/.*/, sendIndex);
 } else {
   // En desarrollo, el 404 para rutas de API desconocidas
   app.use((_req, res) => {
