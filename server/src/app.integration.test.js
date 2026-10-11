@@ -150,6 +150,42 @@ describe("backend API", () => {
     expect(statusResponse.body.data.status).toBe("in_progress");
   });
 
+  it("returns the saved ticket detail and adds an internal note", async () => {
+    const createResponse = await client.post("/api/tickets").set('Origin', 'http://localhost:3001').send({
+      title: "Acceso bloqueado al sistema",
+      description: "La persona ficticia no puede ingresar al sistema de prueba desde esta mañana.",
+      requesterName: "Persona ficticia",
+      requesterArea: "Demo",
+      sourceChannel: "email",
+      impact: "medium",
+      urgency: "high",
+      analysis: {
+        provider: "demo",
+        confidence: "medium",
+        summary: "Acceso de prueba bloqueado.",
+        suggestedSteps: ["Verificar la cuenta ficticia"]
+      }
+    });
+    const ticketId = createResponse.body.data.id;
+
+    const detailResponse = await client.get(`/api/tickets/${ticketId}`);
+    expect(detailResponse.status).toBe(200);
+    expect(detailResponse.body.data).toMatchObject({
+      id: ticketId,
+      aiProvider: "demo",
+      summary: "Acceso de prueba bloqueado."
+    });
+    expect(detailResponse.body.data.suggestedSteps[0].text).toBe("Verificar la cuenta ficticia");
+
+    const noteResponse = await client
+      .post(`/api/tickets/${ticketId}/notes`)
+      .set('Origin', 'http://localhost:3001')
+      .send({ content: "Nota interna con datos ficticios." });
+    expect(noteResponse.status).toBe(201);
+    expect(noteResponse.body.data.notes[0].content).toBe("Nota interna con datos ficticios.");
+    expect(noteResponse.body.data.events.at(-1)).toMatchObject({ type: "note_added" });
+  });
+
   it("returns dashboard metrics", async () => {
     await client.post("/api/tickets").set('Origin', 'http://localhost:3001').send({
       title: "Impresora no responde",

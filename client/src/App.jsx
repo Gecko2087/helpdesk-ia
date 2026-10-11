@@ -34,6 +34,7 @@ const TRANSLATIONS = {
   // Estados
   open: "Abierto",
   in_progress: "En progreso",
+  waiting_user: "Esperando usuario",
   resolved: "Resuelto",
   closed: "Cerrado",
   
@@ -86,6 +87,7 @@ function StatusBadge({ status }) {
   const translations = {
     open: { label: "Abierto", styles: "bg-blue-50 text-blue-700 border-blue-200" },
     in_progress: { label: "En progreso", styles: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+    waiting_user: { label: "Esperando usuario", styles: "bg-amber-50 text-amber-700 border-amber-200" },
     resolved: { label: "Resuelto", styles: "bg-emerald-50 text-emerald-700 border-emerald-200" },
     closed: { label: "Cerrado", styles: "bg-gray-100 text-gray-700 border-gray-300" }
   };
@@ -182,11 +184,23 @@ export function App() {
   const [ticketForm, setTicketForm] = useState(emptyTicket);
   const [analysis, setAnalysis] = useState(null);
   const [working, setWorking] = useState(false);
+  const [selectedTicketId, setSelectedTicketId] = useState(null);
+  const [ticketDetail, setTicketDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
+  const [detailFeedback, setDetailFeedback] = useState("");
+  const [statusDraft, setStatusDraft] = useState("open");
+  const [noteDraft, setNoteDraft] = useState("");
+  const [statusWorking, setStatusWorking] = useState(false);
+  const [noteWorking, setNoteWorking] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const mobileNavTriggerRef = useRef(null);
   const mobileNavFirstItemRef = useRef(null);
   const mobileNavDestinationRef = useRef(null);
   const formRevision = useRef(0);
+  const detailRevision = useRef(0);
+  const detailHeadingRef = useRef(null);
+  const detailTriggerRef = useRef(null);
   const hasLoaded = useRef(false);
 
   function updateTicketForm(nextForm) {
@@ -245,6 +259,16 @@ export function App() {
     return () => document.removeEventListener("keydown", handleEscape);
   }, [mobileNavOpen]);
 
+  useEffect(() => {
+    if (selectedTicketId === null) return undefined;
+    requestAnimationFrame(() => detailHeadingRef.current?.focus());
+    const handleEscape = (event) => {
+      if (event.key === "Escape") closeTicketDetail();
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [selectedTicketId]);
+
   const filteredTickets = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return tickets;
@@ -288,6 +312,99 @@ export function App() {
       setError(saveError.message);
     } finally {
       setWorking(false);
+    }
+  }
+
+  async function openTicketDetail(id, trigger) {
+    const revision = ++detailRevision.current;
+    detailTriggerRef.current = trigger;
+    setSelectedTicketId(id);
+    setTicketDetail(null);
+    setDetailLoading(true);
+    setDetailError("");
+    setDetailFeedback("");
+    setNoteDraft("");
+    setStatusWorking(false);
+    setNoteWorking(false);
+    try {
+      const response = await requestJson(`/tickets/${id}`);
+      if (revision !== detailRevision.current) return;
+      setTicketDetail(response.data);
+      setStatusDraft(response.data.status);
+    } catch (loadError) {
+      if (revision === detailRevision.current) setDetailError(loadError.message);
+    } finally {
+      if (revision === detailRevision.current) setDetailLoading(false);
+    }
+  }
+
+  function closeTicketDetail() {
+    detailRevision.current += 1;
+    setSelectedTicketId(null);
+    setTicketDetail(null);
+    setDetailLoading(false);
+    setDetailError("");
+    setDetailFeedback("");
+    setStatusWorking(false);
+    setNoteWorking(false);
+    requestAnimationFrame(() => detailTriggerRef.current?.focus());
+  }
+
+  function mergeTicket(updatedTicket) {
+    setTickets((current) => current.map((item) => item.id === updatedTicket.id ? { ...item, ...updatedTicket } : item));
+  }
+
+  async function saveTicketStatus(event) {
+    event.preventDefault();
+    if (!ticketDetail || statusDraft === ticketDetail.status) return;
+    const revision = detailRevision.current;
+    setStatusWorking(true);
+    setDetailError("");
+    setDetailFeedback("");
+    try {
+      const response = await requestJson(`/tickets/${ticketDetail.id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: statusDraft })
+      });
+      if (revision !== detailRevision.current) return;
+      setTicketDetail(response.data);
+      mergeTicket(response.data);
+      setDetailFeedback("Estado guardado.");
+      try {
+        const dashboardResponse = await requestJson("/dashboard");
+        if (revision === detailRevision.current) setDashboard(dashboardResponse.data);
+      } catch {
+        if (revision === detailRevision.current) setDetailFeedback("Estado guardado. Las métricas se actualizarán al recargar.");
+      }
+    } catch (statusError) {
+      if (revision === detailRevision.current) setDetailError(statusError.message);
+    } finally {
+      if (revision === detailRevision.current) setStatusWorking(false);
+    }
+  }
+
+  async function addTicketNote(event) {
+    event.preventDefault();
+    const content = noteDraft.trim();
+    if (!ticketDetail || content.length < 2) return;
+    const revision = detailRevision.current;
+    setNoteWorking(true);
+    setDetailError("");
+    setDetailFeedback("");
+    try {
+      const response = await requestJson(`/tickets/${ticketDetail.id}/notes`, {
+        method: "POST",
+        body: JSON.stringify({ content })
+      });
+      if (revision !== detailRevision.current) return;
+      setTicketDetail(response.data);
+      mergeTicket(response.data);
+      setNoteDraft("");
+      setDetailFeedback("Nota ficticia agregada.");
+    } catch (noteError) {
+      if (revision === detailRevision.current) setDetailError(noteError.message);
+    } finally {
+      if (revision === detailRevision.current) setNoteWorking(false);
     }
   }
 
@@ -341,7 +458,28 @@ export function App() {
                 }}
               />
             ) : null}
-            {activeView === "tickets" ? <TicketsView tickets={filteredTickets} /> : null}
+            {activeView === "tickets" ? (
+              <TicketsView
+                tickets={filteredTickets}
+                selectedTicketId={selectedTicketId}
+                ticketDetail={ticketDetail}
+                detailLoading={detailLoading}
+                detailError={detailError}
+                detailFeedback={detailFeedback}
+                detailHeadingRef={detailHeadingRef}
+                statusDraft={statusDraft}
+                noteDraft={noteDraft}
+                statusWorking={statusWorking}
+                noteWorking={noteWorking}
+                onOpenTicket={openTicketDetail}
+                onCloseTicket={closeTicketDetail}
+                onRetryTicket={() => openTicketDetail(selectedTicketId, detailTriggerRef.current)}
+                onStatusDraftChange={setStatusDraft}
+                onSaveStatus={saveTicketStatus}
+                onNoteDraftChange={setNoteDraft}
+                onAddNote={addTicketNote}
+              />
+            ) : null}
             {activeView === "categories" ? <CategoriesView categories={categories} /> : null}
             {activeView === "ai" ? <AiConfigView aiStatus={aiStatus} /> : null}
             {activeView === "docs" ? <DocsView /> : null}
@@ -731,16 +869,206 @@ function NewTicketView({ form, setForm, analysis, aiStatus, working, onAnalyze, 
   );
 }
 
-function TicketsView({ tickets }) {
+const ticketStatuses = ["open", "in_progress", "waiting_user", "resolved", "closed"];
+
+function TicketsView({
+  tickets,
+  selectedTicketId,
+  ticketDetail,
+  detailLoading,
+  detailError,
+  detailFeedback,
+  detailHeadingRef,
+  statusDraft,
+  noteDraft,
+  statusWorking,
+  noteWorking,
+  onOpenTicket,
+  onCloseTicket,
+  onRetryTicket,
+  onStatusDraftChange,
+  onSaveStatus,
+  onNoteDraftChange,
+  onAddNote
+}) {
   return (
     <section className="min-w-0 rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle">
       <h2 className="mb-3 text-base font-bold">Historial de tickets</h2>
-      <TicketList tickets={tickets} />
+      {selectedTicketId !== null ? (
+        <TicketDetail
+          ticket={ticketDetail}
+          loading={detailLoading}
+          error={detailError}
+          feedback={detailFeedback}
+          headingRef={detailHeadingRef}
+          statusDraft={statusDraft}
+          noteDraft={noteDraft}
+          statusWorking={statusWorking}
+          noteWorking={noteWorking}
+          onClose={onCloseTicket}
+          onRetry={onRetryTicket}
+          onStatusDraftChange={onStatusDraftChange}
+          onSaveStatus={onSaveStatus}
+          onNoteDraftChange={onNoteDraftChange}
+          onAddNote={onAddNote}
+        />
+      ) : null}
+      <TicketList tickets={tickets} onOpenTicket={onOpenTicket} />
     </section>
   );
 }
 
-function TicketList({ tickets, compact = false }) {
+function TicketDetail({
+  ticket,
+  loading,
+  error,
+  feedback,
+  headingRef,
+  statusDraft,
+  noteDraft,
+  statusWorking,
+  noteWorking,
+  onClose,
+  onRetry,
+  onStatusDraftChange,
+  onSaveStatus,
+  onNoteDraftChange,
+  onAddNote
+}) {
+  const provider = ticket?.aiStatus === "not_analyzed"
+    ? "No analizado"
+    : ticket?.aiProvider === "gemini" ? "Gemini" : ticket?.aiProvider === "demo" ? "Reglas locales" : "No informado";
+
+  return (
+    <section className="mb-4 rounded-lg border border-app-accent bg-white p-4" aria-labelledby="ticket-detail-title">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-bold uppercase tracking-wide text-app-accent">Detalle del ticket</p>
+          <h3 id="ticket-detail-title" ref={headingRef} tabIndex={-1} className="mt-1 break-words text-lg font-bold">
+            {ticket ? `${ticket.code} · ${ticket.title}` : error ? "No se pudo cargar el ticket" : "Cargando ticket"}
+          </h3>
+        </div>
+        <button className="rounded-md border border-app-border px-3 py-2 text-sm font-semibold" type="button" onClick={onClose}>
+          Volver al historial
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="mt-4 flex items-center gap-2 text-sm text-app-secondary" role="status">
+          <Loader2 className="animate-spin" size={18} />
+          Cargando detalle...
+        </div>
+      ) : null}
+      {error ? (
+        <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800" role="alert">
+          <p>{error}</p>
+          {!ticket ? <button className="mt-2 font-semibold underline" type="button" onClick={onRetry}>Reintentar</button> : null}
+        </div>
+      ) : null}
+      <div aria-live="polite">
+        {feedback ? <p className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{feedback}</p> : null}
+      </div>
+
+      {ticket ? (
+        <div className="mt-4 space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <PriorityBadge priority={ticket.priority} />
+            <StatusBadge status={ticket.status} />
+            {ticket.category ? <span className="rounded border border-app-border px-2 py-0.5 text-xs font-semibold">{ticket.category.name}</span> : null}
+          </div>
+
+          <div className="grid gap-3 rounded-md bg-app-muted p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <DetailInfo label="Solicitante" value={`${ticket.requesterName} · ${ticket.requesterArea}`} />
+            <DetailInfo label="Canal" value={translate(ticket.sourceChannel)} />
+            <DetailInfo label="Impacto / urgencia" value={`${translate(ticket.impact)} / ${translate(ticket.urgency)}`} />
+            <DetailInfo label="Creado" value={formatDate(ticket.createdAt)} />
+          </div>
+          <div>
+            <h4 className="text-sm font-bold">Descripción</h4>
+            <p className="mt-1 whitespace-pre-wrap break-words text-sm text-app-secondary">{ticket.description}</p>
+          </div>
+
+          <section className="rounded-md border border-app-border p-3" aria-labelledby="saved-analysis-title">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 id="saved-analysis-title" className="text-sm font-bold">Análisis guardado</h4>
+              <span className="rounded bg-app-muted px-2 py-1 text-xs font-semibold">Proveedor: {provider}</span>
+            </div>
+            {ticket.aiStatus === "not_analyzed" ? (
+              <p className="mt-2 text-sm text-app-secondary">Este ticket no tiene un análisis guardado.</p>
+            ) : (
+              <div className="mt-3 grid gap-3 text-sm md:grid-cols-2">
+                <DetailInfo label="Confianza" value={ticket.aiConfidence ? translate(`${ticket.aiConfidence}_confidence`) : "No informada"} />
+                <DetailInfo label="Área responsable" value={ticket.responsibleArea ?? "No informada"} />
+                <DetailInfo label="Resumen" value={ticket.summary ?? "No informado"} />
+                <DetailInfo label="Posible causa" value={ticket.possibleCause ?? "No informada"} />
+                <div className="md:col-span-2">
+                  <DetailInfo label="Respuesta sugerida" value={ticket.suggestedReply ?? "No informada"} />
+                </div>
+                {ticket.suggestedSteps?.length ? (
+                  <div className="md:col-span-2">
+                    <p className="text-xs font-semibold uppercase text-app-secondary">Pasos sugeridos</p>
+                    <ol className="mt-1 list-decimal space-y-1 pl-5 text-app-text">
+                      {ticket.suggestedSteps.map((step) => <li key={step.id}>{step.text}</li>)}
+                    </ol>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </section>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <form className="rounded-md border border-app-border p-3" onSubmit={onSaveStatus}>
+              <label className="block text-sm font-bold" htmlFor="ticket-status">Estado</label>
+              <select id="ticket-status" className="mt-2 h-10 w-full rounded-md border border-app-border bg-white px-3 text-sm" value={statusDraft} onChange={(event) => onStatusDraftChange(event.target.value)}>
+                {ticketStatuses.map((status) => <option key={status} value={status}>{translate(status)}</option>)}
+              </select>
+              <button className="mt-3 rounded-md bg-app-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" type="submit" disabled={statusWorking || statusDraft === ticket.status}>
+                {statusWorking ? "Guardando..." : "Guardar estado"}
+              </button>
+            </form>
+
+            <form className="rounded-md border border-app-border p-3" onSubmit={onAddNote}>
+              <label className="block text-sm font-bold" htmlFor="ticket-note">Nota interna ficticia</label>
+              <textarea id="ticket-note" className="mt-2 min-h-24 w-full rounded-md border border-app-border px-3 py-2 text-sm" maxLength={2000} value={noteDraft} onChange={(event) => onNoteDraftChange(event.target.value)} />
+              <div className="mt-1 flex justify-between gap-3 text-xs text-app-secondary">
+                <span>Usá solo datos ficticios.</span>
+                <span>{noteDraft.length}/2000</span>
+              </div>
+              <button className="mt-3 rounded-md bg-app-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" type="submit" disabled={noteWorking || noteDraft.trim().length < 2}>
+                {noteWorking ? "Agregando..." : "Agregar nota"}
+              </button>
+            </form>
+          </div>
+
+          <section aria-labelledby="ticket-notes-title">
+            <h4 id="ticket-notes-title" className="text-sm font-bold">Notas internas</h4>
+            {ticket.notes?.length ? (
+              <ul className="mt-2 space-y-2">
+                {ticket.notes.map((note) => (
+                  <li key={note.id} className="rounded-md bg-app-muted p-3 text-sm">
+                    <p className="whitespace-pre-wrap break-words">{note.content}</p>
+                    <p className="mt-1 text-xs text-app-secondary">{formatDate(note.createdAt)}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="mt-2 text-sm text-app-secondary">Todavía no hay notas.</p>}
+          </section>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function DetailInfo({ label, value }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs font-semibold uppercase text-app-secondary">{label}</p>
+      <p className="mt-0.5 whitespace-pre-wrap break-words font-medium text-app-text">{value}</p>
+    </div>
+  );
+}
+
+function TicketList({ tickets, compact = false, onOpenTicket }) {
   if (!tickets.length) {
     return <div className="mt-3 rounded-md border border-dashed border-app-border bg-app-muted p-4 text-sm text-app-secondary">Sin datos para mostrar.</div>;
   }
@@ -803,6 +1131,9 @@ function TicketList({ tickets, compact = false }) {
                 <dd className="break-words font-medium text-app-text">{formatDate(ticketItem.createdAt)}</dd>
               </div>
             </dl>
+            <button className="mt-3 rounded-md border border-app-border px-3 py-2 text-sm font-semibold" type="button" onClick={(event) => onOpenTicket(ticketItem.id, event.currentTarget)}>
+              Ver detalle
+            </button>
           </li>
         ))}
       </ul>
@@ -817,6 +1148,7 @@ function TicketList({ tickets, compact = false }) {
             <th className="py-3 px-4 font-semibold">Prioridad</th>
             <th className="py-3 px-4 font-semibold">Estado</th>
             <th className="py-3 px-4 font-semibold hidden lg:table-cell">Fecha</th>
+            <th className="py-3 px-4 font-semibold"><span className="sr-only">Acciones</span></th>
           </tr>
         </thead>
         <tbody className="divide-y divide-app-border text-slate-700">
@@ -857,6 +1189,11 @@ function TicketList({ tickets, compact = false }) {
               </td>
               <td className="py-3 px-4 hidden lg:table-cell text-slate-500 whitespace-nowrap">
                 {formatDate(ticketItem.createdAt)}
+              </td>
+              <td className="py-3 px-4 text-right whitespace-nowrap">
+                <button className="rounded-md border border-app-border px-3 py-2 text-sm font-semibold" type="button" onClick={(event) => onOpenTicket(ticketItem.id, event.currentTarget)}>
+                  Ver detalle
+                </button>
               </td>
             </tr>
           ))}
