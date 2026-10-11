@@ -9,5 +9,5 @@ export const env = {
   clientUrl: process.env.CLIENT_URL ?? "http://localhost:5173",
   aiProvider: configuredProvider === "gemini" && !hasGeminiKey ? "demo" : configuredProvider,
   geminiApiKey: process.env.GEMINI_API_KEY ?? "",
-  geminiModel: process.env.GEMINI_MODEL ?? "gemini-3.5-flash"
+  geminiModel: process.env.GEMINI_MODEL ?? "gemini-2.5-flash"
 };
