@@ -1,5 +1,6 @@
 generator client {
   provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/client"
   binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
 }
 
@@ -10,6 +11,8 @@ datasource db {
 
 model Ticket {
   id              Int             @id @default(autoincrement())
+  sandboxId       String
+  sandbox         Sandbox         @relation(fields: [sandboxId], references: [id], onDelete: Cascade)
   code            String          @unique
   title           String
   description     String
@@ -34,11 +37,14 @@ model Ticket {
   suggestedSteps  SuggestedStep[]
   notes           TicketNote[]
   events          TicketEvent[]
+  @@index([sandboxId, createdAt])
 }
 
 model Category {
   id              Int      @id @default(autoincrement())
-  name            String   @unique
+  sandboxId       String
+  sandbox         Sandbox  @relation(fields: [sandboxId], references: [id], onDelete: Cascade)
+  name            String
   description     String
   color           String
   responsibleArea String
@@ -46,6 +52,24 @@ model Category {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   tickets         Ticket[]
+  @@unique([sandboxId, name])
+}
+
+model Sandbox {
+  id        String   @id
+  expiresAt DateTime
+  requests  Int      @default(0)
+  mutations Int      @default(0)
+  analyses  Int      @default(0)
+  tickets   Ticket[]
+  categories Category[]
+  @@index([expiresAt])
+}
+
+model DemoBudget {
+  id       String @id
+  sessions Int    @default(0)
+  analyses Int    @default(0)
 }
 
 model SuggestedStep {
