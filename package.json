@@ -2,13 +2,15 @@
   "name": "helpdesk-ia",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "HelpDesk IA - monorepo full stack para mesa de ayuda con asistencia de IA.",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12"
   },
   "scripts": {
     "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
     "build": "npm install --prefix client && npm install --prefix server && npm run build --prefix client && npm run prisma:generate",
+    "build:vercel": "node scripts/build-vercel.mjs",
     "prisma:generate": "prisma generate --schema=server/prisma/schema.prisma",
     "start": "npm run start --prefix server",
     "test": "npm run test --prefix server",
@@ -18,5 +20,8 @@
   "devDependencies": {
     "concurrently": "^9.2.0",
     "prisma": "6.11.1"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
   }
 }

@@ -1,7 +1,8 @@
 import { prisma } from "../config/prisma.js";
 import { normalizeAiAnalysis } from "./ai.service.js";
 import { calculatePriority } from "../utils/calculatePriority.js";
-import { formatTicketCode } from "../utils/ticketCode.js";
+import { sandboxId } from '../middleware/sandbox.js';
+import { randomBytes } from 'node:crypto';
 
 const includeTicketRelations = {
   category: true,
@@ -23,7 +24,7 @@ export async function listTickets(query) {
 
 export function getTicketById(id) {
   return prisma.ticket.findUnique({
-    where: { id },
+    where: { id, sandboxId: sandboxId() },
     include: includeTicketRelations
   });
 }
@@ -32,6 +33,10 @@ export async function createTicket(data) {
   const nextCode = await getNextTicketCode();
   const analysis = data.analysis ? normalizeAiAnalysis(data.analysis, data) : null;
   const categoryId = data.categoryId ?? (analysis ? await resolveCategoryId(analysis.category) : undefined);
+  if (categoryId !== undefined) {
+    const category = await prisma.category.findFirst({ where: { id: categoryId, sandboxId: sandboxId() } });
+    if (!category) throw Object.assign(new Error('Category not found'), { code: 'P2025' });
+  }
   const impact = analysis?.impact ?? data.impact;
   const urgency = analysis?.urgency ?? data.urgency;
   const priority = calculatePriority(impact, urgency);
@@ -41,6 +46,7 @@ export async function createTicket(data) {
 
   const ticket = await prisma.ticket.create({
     data: {
+      sandboxId: sandboxId(),
       code: nextCode,
       title: data.title,
       description: data.description,
@@ -73,7 +79,7 @@ export async function createTicket(data) {
 
 export function updateTicketStatus(id, status) {
   return prisma.ticket.update({
-    where: { id },
+    where: { id, sandboxId: sandboxId() },
     data: {
       status,
       events: {
@@ -89,7 +95,7 @@ export function updateTicketStatus(id, status) {
 
 export function addTicketNote(id, content) {
   return prisma.ticket.update({
-    where: { id },
+    where: { id, sandboxId: sandboxId() },
     data: {
       notes: {
         create: { content }
@@ -106,26 +112,21 @@ export function addTicketNote(id, content) {
 }
 
 async function resolveCategoryId(categoryName) {
-  const category = await prisma.category.findUnique({ where: { name: categoryName } });
+  const category = await prisma.category.findFirst({ where: { name: categoryName, sandboxId: sandboxId() } });
 
   if (category) return category.id;
 
-  const fallback = await prisma.category.findUnique({ where: { name: "Otro" } });
+  const fallback = await prisma.category.findFirst({ where: { name: "Otro", sandboxId: sandboxId() } });
   return fallback?.id;
 }
 
 async function getNextTicketCode() {
-  const latest = await prisma.ticket.findFirst({
-    orderBy: { id: "desc" },
-    select: { code: true }
-  });
-  const latestNumber = latest?.code ? Number(latest.code.replace("HD-", "")) : 0;
-
-  return formatTicketCode(Number.isFinite(latestNumber) ? latestNumber + 1 : 1);
+  // Random 128-bit identifier avoids read-last/increment races between visitors.
+  return 'HD-' + randomBytes(16).toString('hex').toUpperCase();
 }
 
 function buildTicketWhere(query) {
-  const where = {};
+  const where = { sandboxId: sandboxId() };
 
   if (query.status) where.status = query.status;
   if (query.priority) where.priority = query.priority;

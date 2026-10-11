@@ -1,209 +1,55 @@
 # HelpDesk IA
 
-Sistema de gestión de tickets de soporte técnico con asistencia de inteligencia artificial.
+Demo de mesa de ayuda con React, Express, Prisma y análisis asistido. Cada visitante recibe un espacio aislado de una hora con tres tickets ficticios y tres categorías. Puede probar un análisis, guardar tickets y ver los cambios en el tablero.
 
-Clasificá, priorizá y resolvé incidentes de IT con ayuda de Gemini API — y modo demo sin API key para demostraciones offline.
+**Estado:** el código y las pruebas se trabajan localmente. La antigua URL de Railway (`helpdesk-ia-production.up.railway.app`) responde 404 y no es un despliegue disponible. El [laboratorio público del portfolio](https://gecko2087.github.io/portfolio/lab.html?project=helpdesk) es una demostración independiente; no usa esta API ni esta base de datos. El despliegue de esta aplicación en Vercel y PostgreSQL está pendiente de verificación.
 
-🌐 **App en producción:** https://helpdesk-ia-production.up.railway.app
+## Qué muestra
 
----
+- Tickets, categorías, estados, prioridades y métricas de una mesa de ayuda.
+- Análisis de ejemplo por reglas cuando no hay una clave Gemini configurada.
+- Integración opcional con Gemini desde el servidor. La interfaz indica el proveedor de cada resultado y avisa antes de enviar un caso a Google.
+- Sesiones aisladas mediante cookie HttpOnly. Los datos ficticios y los límites de uso se guardan en la base de datos.
 
-## 🚀 Demo rápida
+## Desarrollo local
 
-1. Abrí la app: https://helpdesk-ia-production.up.railway.app
-2. Hacé clic en **Nuevo ticket** → elegí un caso de ejemplo (CRM, Internet, Impresora).
-3. Presioná **Analizar con IA** — en segundos obtenés categoría, prioridad, pasos sugeridos y respuesta automática.
-4. Guardá el ticket y verificalo en el historial con estado, prioridad y categoría visibles.
-
----
-
-## 🛠️ Stack tecnológico
-
-| Capa | Tecnología |
-|---|---|
-| Frontend | React 18 + Vite |
-| Estilos | Tailwind CSS 3 |
-| Gráficos | Recharts |
-| Iconos | lucide-react |
-| Backend | Node.js + Express 5 |
-| Base de datos | PostgreSQL (prod) / SQLite (dev) vía Prisma |
-| Validaciones | Zod |
-| IA | Google Gemini API (con fallback a modo demo) |
-| Despliegue | Railway |
-
----
-
-## 📦 Desarrollo local
-
-### Requisitos
-
-- Node.js 20+
-- npm 10+
-
-### Instalación
+Requiere Node.js 22.12 o superior, npm y una base PostgreSQL **nueva para datos de prueba**. No uses una base con información real. Instalá las dependencias:
 
 ```bash
-# Clonar repositorio
-git clone https://github.com/Gecko2087/helpdesk-ia.git
-cd helpdesk-ia
-
-# Instalar dependencias del monorepo
-npm install
-npm install --prefix server
-npm install --prefix client
+npm ci
+npm ci --prefix server
+npm ci --prefix client
 ```
 
-### Variables de entorno
+Copiá `server/.env.example` a `server/.env` y configurá `DATABASE_URL` con la URL de esa base PostgreSQL, `CLIENT_URL=http://localhost:5173` y `NODE_ENV=development`. La plantilla deja la clave Gemini vacía para usar reglas locales. Para activar Gemini, configurá `AI_PROVIDER=gemini`, `GEMINI_API_KEY` solo en el servidor y un `GEMINI_MODEL` habilitado para tu cuenta. `gemini-2.5-flash` es un ejemplo documentado por Google; el modelo disponible y la cuota concreta se comprueban en Google AI Studio.
 
-Copiá el archivo de ejemplo y completalo:
+Prepará la base y arrancá ambos procesos:
 
 ```bash
-cp .env.example server/.env
-```
-
-Editá `server/.env`:
-
-```env
-# SQLite para desarrollo local
-DATABASE_URL="file:./dev.db"
-
-PORT=3001
-NODE_ENV="development"
-
-# IA: dejá vacío para usar modo demo
-AI_PROVIDER="gemini"
-GEMINI_API_KEY="tu_api_key_de_gemini"
-GEMINI_MODEL="gemini-3.5-flash"
-
-CLIENT_URL="http://localhost:5173"
-```
-
-> **Modo demo**: si `GEMINI_API_KEY` está vacía o `AI_PROVIDER` no es `"gemini"`, la app usa respuestas simuladas. Ideal para demos sin internet.
-
-### Base de datos local
-
-```bash
-# Crear tablas SQLite y poblar con datos de ejemplo
-npm run db:migrate
-npm run db:seed
-```
-
-### Iniciar en modo desarrollo
-
-```bash
+npm run db:generate --prefix server
+npm run db:deploy --prefix server
 npm run dev
 ```
 
-- Frontend: http://localhost:5173
-- Backend: http://localhost:3001/api/health
+En desarrollo, configurá `VITE_API_URL=http://localhost:3001/api` en `client/.env.local` para que el frontend llame a Express. `CLIENT_URL` debe coincidir exactamente con el origen de Vite (`http://localhost:5173` en este ejemplo). Las peticiones incluyen la cookie de sesión; el servidor habilita credenciales CORS solo para los orígenes permitidos. El cliente abre en `http://localhost:5173` y la salud de la API se consulta en `http://localhost:3001/api/health`. Los tres ejemplos se crean al abrir cada espacio; el script histórico `db:seed` no forma parte de este flujo.
 
-> **Nota:** En desarrollo, si necesitás que el frontend llame directamente al backend local, creá un archivo `client/.env.local` con:
-> ```
-> VITE_API_URL=http://localhost:3001/api
-> ```
-
----
-
-## ☁️ Despliegue en Railway
-
-La app ya está desplegada en: https://helpdesk-ia-production.up.railway.app
-
-### Variables de entorno en Railway
-
-| Variable | Valor |
-|---|---|
-| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (referencia automática al plugin) |
-| `NODE_ENV` | `production` |
-| `AI_PROVIDER` | `gemini` |
-| `GEMINI_API_KEY` | Tu API key de Google Gemini |
-| `GEMINI_MODEL` | `gemini-3.5-flash` |
-| `CLIENT_URL` | `https://helpdesk-ia-production.up.railway.app` |
-
-> ⚠️ **NUNCA** expongas `GEMINI_API_KEY` en el código fuente, el frontend, ni en commits públicos. Solo existe en el backend como variable de entorno.
-
-### Cómo funciona el despliegue
-
-Railway ejecuta automáticamente al arrancar:
+## Pruebas
 
 ```bash
-# 1. Aplica migraciones en PostgreSQL (idempotente, seguro de correr siempre)
-npm run db:deploy --prefix server
-
-# 2. Carga categorías y tickets demo (usa upsert, no duplica datos)
-npm run db:seed --prefix server
-
-# 3. Inicia el servidor Express
-npm start
+npm test --prefix server
 ```
 
-El servidor Express sirve tanto la API (`/api/*`) como el frontend compilado desde el mismo dominio — sin necesidad de un servidor separado para el frontend.
+El script de pruebas crea una base SQLite temporal, ejecuta las pruebas HTTP y restaura el cliente Prisma de PostgreSQL. No utiliza una base remota. También podés compilar el cliente con `npm run build --prefix client`.
 
----
+## Despliegue
 
-## 🗂️ Estructura del proyecto
+El procedimiento previsto usa Vercel para la aplicación y una base PostgreSQL aparte. Primero se aplican las migraciones con `npm run db:deploy --prefix server` sobre una base nueva; luego se configura `CLIENT_URL` con el origen exacto de la aplicación. El archivo [`DEPLOYMENT.md`](./DEPLOYMENT.md) detalla las variables, cuotas y comprobaciones pendientes. No hay una URL de producción confirmada para esta aplicación.
 
-```
-helpdesk-ia/
-├── client/                 # Frontend React + Vite
-│   ├── src/
-│   │   ├── App.jsx         # Toda la UI (SPA de una sola página)
-│   │   └── styles/
-│   └── dist/               # Build de producción (generado, no committear)
-├── server/                 # Backend Node.js + Express
-│   ├── prisma/
-│   │   ├── schema.prisma   # Modelo de datos
-│   │   ├── migrations/     # Migraciones de Prisma (PostgreSQL)
-│   │   ├── seed.js         # Datos iniciales (categorías + tickets demo)
-│   │   └── migrate.js      # Script de migración SQLite para desarrollo
-│   └── src/
-│       ├── app.js          # Express: rutas + archivos estáticos en producción
-│       ├── server.js       # Punto de entrada
-│       ├── config/         # Variables de entorno + Prisma Client
-│       ├── controllers/    # Controladores HTTP
-│       ├── routes/         # Definición de rutas
-│       ├── services/       # Lógica de negocio + integración Gemini
-│       ├── validators/     # Validaciones Zod
-│       └── utils/          # Utilidades (cálculo de prioridad, códigos)
-├── docs/                   # Documentación del TP
-├── .env.example            # Plantilla de variables de entorno
-├── .gitignore
-├── railway.json            # Configuración de Railway
-└── package.json            # Scripts del monorepo
-```
+Gemini está sujeto a los [límites reales de la cuenta y del modelo](https://ai.google.dev/gemini-api/docs/rate-limits). La aplicación limita por defecto a 20 análisis Gemini diarios entre todos los visitantes; `GEMINI_DAILY_ANALYSIS_LIMIT` permite fijar un valor acorde a AI Studio. Además, cada sesión admite 10 análisis y el servicio crea como máximo 100 sesiones nuevas por día. Google indica en su [tabla de precios](https://ai.google.dev/gemini-api/docs/pricing#gemini-2.5-flash) que el contenido del nivel gratuito puede usarse para mejorar sus productos. Usá exclusivamente datos ficticios.
 
----
+## Estructura
 
-## 🤖 Integración con Gemini
-
-- El análisis ocurre **siempre en el backend** — la API key nunca llega al cliente.
-- Si la API falla o no hay key configurada, el sistema responde con análisis simulado (**modo demo**).
-- El modelo se configura con `GEMINI_MODEL` (en uso: `gemini-3.5-flash`).
-
----
-
-## 📋 Scripts disponibles
-
-```bash
-# Desarrollo
-npm run dev              # Levanta servidor + cliente en paralelo
-
-# Build
-npm run build            # Compila el frontend + genera Prisma Client
-
-# Producción
-npm start                # Levanta el servidor (sirve API + frontend compilado)
-
-# Base de datos
-npm run db:migrate       # Crea tablas SQLite (solo desarrollo local)
-npm run db:seed          # Pobla la BD con categorías y tickets demo
-npm run db:deploy        # Aplica migraciones en PostgreSQL (producción)
-```
-
----
-
-## 📄 Documentación adicional
-
-Ver carpeta [`docs/`](./docs/) para:
-- Especificación funcional y técnica
-- Integración con Gemini
-- Checklist de defensa
+- `client/`: interfaz React, tablero y formulario.
+- `server/src/`: API Express, validación, análisis y aislamiento de sesiones.
+- `server/prisma/`: esquema y migraciones PostgreSQL.
+- `docs/`: documentación funcional y técnica del proyecto.

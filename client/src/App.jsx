@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -157,6 +157,7 @@ const emptyTicket = {
 function requestJson(path, options) {
   return fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     ...options
   }).then(async (response) => {
     const payload = await response.json().catch(() => ({}));
@@ -179,11 +180,19 @@ export function App() {
   const [ticketForm, setTicketForm] = useState(emptyTicket);
   const [analysis, setAnalysis] = useState(null);
   const [working, setWorking] = useState(false);
+  const formRevision = useRef(0);
+
+  function updateTicketForm(nextForm) {
+    formRevision.current += 1;
+    setTicketForm(nextForm);
+    setAnalysis(null);
+  }
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
+      await requestJson('/demo/session', { method: 'POST' });
       const [dashboardResponse, ticketsResponse, categoriesResponse, aiResponse] = await Promise.all([
         requestJson("/dashboard"),
         requestJson("/tickets"),
@@ -216,16 +225,18 @@ export function App() {
   const pageTitle = navItems.find((item) => item.id === activeView)?.label ?? "Dashboard";
 
   async function analyzeCurrentTicket() {
+    const revision = formRevision.current;
     setWorking(true);
     setError("");
+    setAnalysis(null);
     try {
       const response = await requestJson("/tickets/analyze", {
         method: "POST",
         body: JSON.stringify(ticketForm)
       });
-      setAnalysis(response.data);
+      if (revision === formRevision.current) setAnalysis(response.data);
     } catch (analyzeError) {
-      setError(analyzeError.message);
+      if (revision === formRevision.current) setError(analyzeError.message);
     } finally {
       setWorking(false);
     }
@@ -239,8 +250,7 @@ export function App() {
         method: "POST",
         body: JSON.stringify({ ...ticketForm, analysis })
       });
-      setTicketForm(emptyTicket);
-      setAnalysis(null);
+      updateTicketForm(emptyTicket);
       await loadData();
       setActiveView("tickets");
     } catch (saveError) {
@@ -266,19 +276,19 @@ export function App() {
           <LoadingState />
         ) : (
           <main className="p-4 lg:p-6">
-            {activeView === "dashboard" ? <DashboardView dashboard={dashboard} tickets={filteredTickets} categories={categories} /> : null}
+            {activeView === "dashboard" ? <DashboardView dashboard={dashboard} tickets={filteredTickets} categories={categories} aiStatus={aiStatus} onNewTicket={() => setActiveView("new")} /> : null}
             {activeView === "new" ? (
               <NewTicketView
                 form={ticketForm}
-                setForm={setTicketForm}
+                setForm={updateTicketForm}
                 analysis={analysis}
+                aiStatus={aiStatus}
                 categories={categories}
                 working={working}
                 onAnalyze={analyzeCurrentTicket}
                 onSave={saveCurrentTicket}
                 onClear={() => {
-                  setTicketForm(emptyTicket);
-                  setAnalysis(null);
+                  updateTicketForm(emptyTicket);
                 }}
               />
             ) : null}
@@ -333,7 +343,7 @@ function Topbar({ title, aiStatus, query, onQueryChange, onNewTicket }) {
     <header className="flex flex-col gap-3 border-b border-app-border bg-app-background/95 px-4 py-4 md:flex-row md:items-center md:justify-between lg:px-6">
       <div>
         <h1 className="text-2xl font-bold leading-tight text-app-text">{title}</h1>
-        <p className="text-sm text-app-secondary">Vista operativa para seguimiento y análisis de tickets.</p>
+        <p className="text-sm text-app-secondary">Demo con API y base de datos. Tu espacio vence en una hora. Usá datos ficticios.</p>
       </div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <label className="flex h-10 items-center gap-2 rounded-md border border-app-border bg-app-surface px-3 text-sm text-app-secondary shadow-subtle">
@@ -369,7 +379,7 @@ function AiStatusIndicator({ aiStatus }) {
   );
 }
 
-function DashboardView({ dashboard, tickets, categories }) {
+function DashboardView({ dashboard, tickets, categories, aiStatus, onNewTicket }) {
   const metrics = dashboard?.metrics ?? {};
 
   const priorityColors = {
@@ -406,11 +416,24 @@ function DashboardView({ dashboard, tickets, categories }) {
 
   return (
     <>
+      <section className="mb-4 flex flex-col gap-4 rounded-lg border border-app-border bg-app-surface p-5 shadow-subtle md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-app-accent">Espacio de prueba · datos ficticios</p>
+          <h2 className="mt-1 text-xl font-bold text-app-text">Explorá una mesa de ayuda en funcionamiento</h2>
+          <p className="mt-2 max-w-2xl text-sm text-app-secondary">
+            Este espacio empieza con tres tickets de ejemplo y sus categorías. Revisá el tablero y probá el análisis con un caso ficticio.
+            {aiStatus?.demoMode ? " El modo demo usa reglas locales." : " Gemini está activo para nuevos análisis."}
+          </p>
+        </div>
+        <button className="shrink-0 rounded-md bg-app-accent px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#14874b]" type="button" onClick={onNewTicket}>
+          Probar un análisis
+        </button>
+      </section>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricTile label="Total tickets" value={metrics.totalTickets ?? 0} detail="Tickets registrados" />
         <MetricTile label="Abiertos" value={metrics.openTickets ?? 0} detail="Pendientes de atención" />
         <MetricTile label="En progreso" value={metrics.inProgressTickets ?? 0} detail="En tratamiento" />
-        <MetricTile label="Analizados IA" value={metrics.analyzedTickets ?? 0} detail="Gemini o demo" />
+        <MetricTile label="Con análisis" value={metrics.analyzedTickets ?? 0} detail="Gemini o reglas" />
       </div>
 
       {/* Gráficos de Recharts */}
@@ -485,11 +508,14 @@ function DashboardView({ dashboard, tickets, categories }) {
   );
 }
 
-function NewTicketView({ form, setForm, analysis, working, onAnalyze, onSave, onClear }) {
-  const canAnalyze = form.title.length >= 5 && form.description.length >= 20 && form.requesterName && form.requesterArea;
+function NewTicketView({ form, setForm, analysis, aiStatus, working, onAnalyze, onSave, onClear }) {
+  const canAnalyze = form.title.trim().length >= 5 && form.description.trim().length >= 20 &&
+    form.requesterName.trim().length >= 2 && form.requesterArea.trim().length >= 2;
   return (
     <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
       <section className="rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle">
+        <h2 className="text-base font-bold text-app-text">Nuevo caso de prueba</h2>
+        <p className="mb-4 mt-1 text-sm text-app-secondary">Elegí un ejemplo o escribí un caso ficticio. Analizalo y guardalo para ver cómo aparece en el tablero.</p>
         <div className="mb-4 flex flex-wrap gap-2">
           {examples.map((example) => (
             <button
@@ -543,9 +569,20 @@ function NewTicketView({ form, setForm, analysis, working, onAnalyze, onSave, on
             onChange={(event) => setForm({ ...form, description: event.target.value })}
           />
         </label>
+        <div className="mt-4 rounded-md border border-app-border bg-app-muted p-3 text-sm text-app-secondary">
+          {aiStatus?.demoMode ? (
+            <p>Modo demo: el análisis usa reglas locales y no envía el ticket a Gemini. Usá solo datos ficticios en este espacio público.</p>
+          ) : (
+            <p>
+              Antes de analizar: usá solo datos ficticios. El título, la descripción, el área y otros detalles del caso se envían desde el servidor a Google Gemini.
+              Google indica que el contenido del nivel gratuito puede usarse para mejorar sus productos.{' '}
+              <a className="font-semibold text-app-accent underline" href="https://ai.google.dev/gemini-api/docs/pricing#gemini-2.5-flash" target="_blank" rel="noreferrer">Ver política de Google</a>.
+            </p>
+          )}
+        </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <button className="rounded-md bg-app-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={!canAnalyze || working} type="button" onClick={onAnalyze}>
-            {working ? "Procesando..." : "Analizar con IA"}
+            {working ? "Procesando..." : aiStatus?.demoMode ? "Analizar con reglas" : "Analizar con Gemini"}
           </button>
           <button className="rounded-md border border-app-border px-4 py-2 text-sm font-semibold disabled:opacity-50" disabled={!analysis || working} type="button" onClick={onSave}>
             Guardar ticket
@@ -687,7 +724,12 @@ function AiConfigView({ aiStatus }) {
         <Info label="Modelo" value={aiStatus?.model ?? "-"} />
         <Info label="Modo demo" value={aiStatus?.demoMode ? "Activo" : "Inactivo"} />
       </dl>
-      <p className="mt-4 text-sm text-app-secondary">La API key se guarda solamente en el backend mediante variable de entorno.</p>
+      <p className="mt-4 text-sm text-app-secondary">
+        {aiStatus?.demoMode
+          ? "Los análisis nuevos usan reglas locales. No representan respuestas de Gemini."
+          : "Los análisis nuevos usan Gemini desde el servidor. Si el proveedor falla, la respuesta muestra el respaldo por reglas."}
+        {" "}La clave se configura solo en el backend.
+      </p>
     </section>
   );
 }
@@ -696,7 +738,8 @@ function DocsView() {
   return (
     <section className="rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle">
       <h2 className="text-base font-bold">Documentación del proyecto</h2>
-      <p className="mt-2 text-sm text-app-secondary">HelpDesk IA centraliza tickets internos, usa Gemini desde backend y mantiene modo demo como respaldo para la defensa.</p>
+      <p className="mt-2 text-sm text-app-secondary">Cada visitante recibe un espacio aislado de una hora con tres tickets ficticios. Podés analizar un ejemplo, guardar otro ticket y ver cómo cambia el tablero.</p>
+      <p className="mt-2 text-sm text-app-secondary">El modo demo genera sugerencias con reglas. Si Gemini está activo, el servidor envía los datos del caso a Google y muestra el proveedor en cada resultado. Revisá siempre la sugerencia antes de usarla.</p>
     </section>
   );
 }
@@ -706,10 +749,10 @@ function AnalysisPanel({ analysis }) {
     <section className="rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle">
       <div className="flex items-center gap-2">
         <Sparkles className="text-app-accent" size={18} />
-        <h2 className="text-base font-bold text-app-text">Diagnóstico IA</h2>
+        <h2 className="text-base font-bold text-app-text">Diagnóstico sugerido</h2>
       </div>
       {!analysis ? (
-        <p className="mt-3 text-sm text-app-secondary">Carga un caso y presiona Analizar con IA.</p>
+        <p className="mt-3 text-sm text-app-secondary">Cargá un caso ficticio y presioná Analizar.</p>
       ) : (
         <div className="mt-4 space-y-3 text-sm">
           <Info label="Proveedor" value={analysis.provider} />

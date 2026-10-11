@@ -1,4 +1,5 @@
 import { prisma } from "../config/prisma.js";
+import { sandboxId } from '../middleware/sandbox.js';
 
 const priorityScores = {
   low: 1,
@@ -9,6 +10,7 @@ const priorityScores = {
 
 export async function getDashboard() {
   const tickets = await prisma.ticket.findMany({
+    where: { sandboxId: sandboxId() },
     include: { category: true },
     orderBy: { createdAt: "desc" }
   });
