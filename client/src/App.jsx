@@ -95,7 +95,7 @@ function StatusBadge({ status }) {
   const item = translations[status.toLowerCase()] ?? { label: status, styles: "bg-gray-50 text-gray-600 border-gray-200" };
 
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold border ${item.styles}`}>
+    <span className={`inline-flex max-w-full items-center justify-center whitespace-normal px-2 py-0.5 text-center rounded text-xs font-semibold border ${item.styles}`}>
       {item.label}
     </span>
   );
@@ -1163,26 +1163,36 @@ function TicketList({ tickets, compact = false, onOpenTicket }) {
           </li>
         ))}
       </ul>
-      <div className="mt-3 hidden min-w-0 overflow-x-auto rounded-md border border-app-border bg-white shadow-sm md:block">
-      <table className="w-full text-left border-collapse text-sm">
+      <div className="mt-3 hidden w-full min-w-0 max-w-full overflow-x-auto rounded-md border border-app-border bg-white shadow-sm md:block">
+      <table className="w-full table-fixed text-left border-collapse text-sm">
+        <colgroup>
+          <col className="w-[17%]" />
+          <col className="w-[20%]" />
+          <col className="w-[13%]" />
+          <col className="w-[12%]" />
+          <col className="w-[9%]" />
+          <col className="w-[12%]" />
+          <col className="hidden w-[10%] lg:table-column" />
+          <col className="w-[7%]" />
+        </colgroup>
         <thead>
           <tr className="bg-slate-50 border-b border-app-border text-xs font-semibold uppercase tracking-wider text-slate-500">
-            <th className="py-3 px-4 font-semibold">Código</th>
-            <th className="py-3 px-4 font-semibold">Título</th>
-            <th className="py-3 px-4 font-semibold hidden md:table-cell">Solicitante</th>
-            <th className="py-3 px-4 font-semibold hidden sm:table-cell">Categoría</th>
-            <th className="py-3 px-4 font-semibold">Prioridad</th>
-            <th className="py-3 px-4 font-semibold">Estado</th>
-            <th className="py-3 px-4 font-semibold hidden lg:table-cell">Fecha</th>
-            <th className="py-3 px-4 font-semibold"><span className="sr-only">Acciones</span></th>
+            <th className="py-3 px-3 font-semibold">Código</th>
+            <th className="py-3 px-3 font-semibold">Título</th>
+            <th className="py-3 px-3 font-semibold hidden md:table-cell">Solicitante</th>
+            <th className="py-3 px-3 font-semibold hidden sm:table-cell">Categoría</th>
+            <th className="py-3 px-3 font-semibold">Prioridad</th>
+            <th className="py-3 px-3 font-semibold">Estado</th>
+            <th className="py-3 px-3 font-semibold hidden lg:table-cell">Fecha</th>
+            <th className="py-3 px-3 font-semibold"><span className="hidden lg:inline">Acciones</span><span className="lg:hidden">Ver</span></th>
           </tr>
         </thead>
         <tbody className="divide-y divide-app-border text-slate-700">
           {tickets.map((ticketItem) => (
             <tr key={ticketItem.id} className="hover:bg-slate-50 transition-colors">
-              <td className="py-3 px-4 font-bold text-slate-900 whitespace-nowrap">{ticketItem.code}</td>
-              <td className="py-3 px-4 font-medium text-slate-800">
-                <div>{ticketItem.title}</div>
+              <td className="break-all py-3 px-3 font-bold text-slate-900">{ticketItem.code}</td>
+              <td className="break-words py-3 px-3 font-medium text-slate-800">
+                <div className="break-words">{ticketItem.title}</div>
                 <div className="text-xs text-app-secondary md:hidden mt-0.5">
                   Solicitado por {ticketItem.requesterName} ({ticketItem.requesterArea})
                 </div>
@@ -1193,32 +1203,32 @@ function TicketList({ tickets, compact = false, onOpenTicket }) {
                   Fecha: {formatDate(ticketItem.createdAt)}
                 </div>
               </td>
-              <td className="py-3 px-4 hidden md:table-cell">
-                <div>{ticketItem.requesterName}</div>
-                <div className="text-xs text-app-secondary">{ticketItem.requesterArea}</div>
+              <td className="break-words py-3 px-3 hidden md:table-cell">
+                <div className="break-words">{ticketItem.requesterName}</div>
+                <div className="break-words text-xs text-app-secondary">{ticketItem.requesterArea}</div>
               </td>
-              <td className="py-3 px-4 hidden sm:table-cell whitespace-nowrap">
+              <td className="break-words py-3 px-3 hidden sm:table-cell">
                 {ticketItem.category ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: ticketItem.category.color }} />
-                    {ticketItem.category.name}
+                  <span className="inline-flex min-w-0 items-start gap-1.5">
+                    <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: ticketItem.category.color }} />
+                    <span className="min-w-0 break-words">{ticketItem.category.name}</span>
                   </span>
                 ) : (
                   <span className="text-slate-400">Sin categoría</span>
                 )}
               </td>
-              <td className="py-3 px-4 whitespace-nowrap">
+              <td className="py-3 px-3 whitespace-nowrap">
                 <PriorityBadge priority={ticketItem.priority} />
               </td>
-              <td className="py-3 px-4 whitespace-nowrap">
+              <td className="py-3 px-3 whitespace-normal">
                 <StatusBadge status={ticketItem.status} />
               </td>
-              <td className="py-3 px-4 hidden lg:table-cell text-slate-500 whitespace-nowrap">
+              <td className="py-3 px-3 hidden lg:table-cell text-xs text-slate-500 whitespace-normal">
                 {formatDate(ticketItem.createdAt)}
               </td>
-              <td className="py-3 px-4 text-right whitespace-nowrap">
-                <button className="rounded-md border border-app-border px-3 py-2 text-sm font-semibold" type="button" onClick={(event) => onOpenTicket(ticketItem.id, event.currentTarget)}>
-                  Ver detalle
+              <td className="py-3 px-3 text-right whitespace-normal">
+                <button className="max-w-full rounded-md border border-app-border px-2 py-2 text-sm font-semibold" type="button" aria-label={`Ver detalle de ${ticketItem.code}`} onClick={(event) => onOpenTicket(ticketItem.id, event.currentTarget)}>
+                  Ver
                 </button>
               </td>
             </tr>
