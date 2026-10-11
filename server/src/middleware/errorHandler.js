@@ -1,4 +1,6 @@
 export function errorHandler(error, _req, res, _next) {
+  if (error?.type === 'entity.too.large') return res.status(413).json({ error: 'Solicitud demasiado grande' });
+  if (error?.type === 'entity.parse.failed') return res.status(400).json({ error: 'JSON inválido' });
   if (error?.code === "P2025") {
     return res.status(404).json({ error: "Recurso no encontrado" });
   }
