@@ -1,0 +1,20 @@
+{
+  "name": "helpdesk-ia-demo",
+  "main": "./worker.mjs",
+  "compatibility_date": "2026-10-29",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "../client/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "helpdesk-ia-demo",
+    "database_id": "98fa33b4-1da1-441e-b54e-375e1496e86c",
+    "migrations_dir": "./migrations"
+  }],
+  "triggers": { "crons": ["23 * * * *"] }
+}
