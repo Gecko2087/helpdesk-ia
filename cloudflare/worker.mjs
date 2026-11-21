@@ -1,7 +1,7 @@
 import { analyzeTicket, normalizeAiAnalysis } from '../server/src/services/ai.service.js';
 import { calculatePriority } from '../server/src/utils/calculatePriority.js';
 import { categorySchema } from '../server/src/validators/category.validator.js';
-import { createTicketSchema, analyzeTicketSchema, addTicketNoteSchema, updateTicketStatusSchema } from '../server/src/validators/ticket.validator.js';
+import { createTicketSchema, analyzeTicketSchema, addTicketNoteSchema, updateTicketStatusSchema, reviewPrioritySchema } from '../server/src/validators/ticket.validator.js';
 
 const json = (data, status = 200, headers = {}) => Response.json(data, {
   status, headers: { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', ...headers },
@@ -96,7 +96,23 @@ async function ticketDetail(db, owner, id) {
     all(db, 'SELECT * FROM TicketNote WHERE ticketId=? ORDER BY createdAt DESC,id DESC', id),
     all(db, 'SELECT * FROM TicketEvent WHERE ticketId=? ORDER BY createdAt,id', id),
   ]);
-  return { ...row, category: groups.find(group => group.id === row.categoryId) ?? null, suggestedSteps, notes, events };
+  return { ...row, canReviewPriority: true, category: groups.find(group => group.id === row.categoryId) ?? null, suggestedSteps, notes, events };
+}
+
+async function reviewPriority(db, owner, id, input) {
+  const { impact, urgency, reason } = input;
+  const priority = calculatePriority(impact, urgency);
+  const now = timestamp();
+  await db.batch([
+    db.prepare(`INSERT INTO TicketEvent(ticketId,type,description,createdAt)
+      SELECT id,'priority_reviewed','Triaje revisado (' || priority || ' → ' || ? || '). ' || ?,?
+      FROM Ticket WHERE id=? AND sandboxId=? AND (impact != ? OR urgency != ?)`)
+      .bind(priority, reason, now, id, owner, impact, urgency),
+    db.prepare('UPDATE Ticket SET impact=?,urgency=?,priority=?,updatedAt=? WHERE id=? AND sandboxId=? AND (impact != ? OR urgency != ?)')
+      .bind(impact, urgency, priority, now, id, owner, impact, urgency),
+  ]);
+  const data = await ticketDetail(db, owner, id);
+  return data ? json({ data }) : error('Ticket no encontrado.', 404);
 }
 
 async function createTicket(db, owner, input) {
@@ -167,13 +183,17 @@ async function route(request, env, url, owner, isAnalysis, model) {
     const input = await parse(request, createTicketSchema);
     return input ? createTicket(db, owner, input) : error('Datos inválidos.', 400);
   }
-  const ticket = path.match(/^\/api\/tickets\/(\d+)(?:\/(status|notes))?$/);
+  const ticket = path.match(/^\/api\/tickets\/(\d+)(?:\/(status|notes|priority))?$/);
   if (ticket) {
     const id = Number(ticket[1]);
     const part = ticket[2];
     if (!part && method === 'GET') {
       const data = await ticketDetail(db, owner, id);
       return data ? json({ data }) : error('Ticket no encontrado.', 404);
+    }
+    if (part === 'priority' && method === 'PATCH') {
+      const input = await parse(request, reviewPrioritySchema);
+      return input ? reviewPriority(db, owner, id, input) : error('Datos inválidos.', 400);
     }
     if ((part === 'notes' && method === 'POST') || (part === 'status' && method === 'PATCH')) {
       const notes = part === 'notes';

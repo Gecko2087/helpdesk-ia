@@ -45,6 +45,12 @@ export const updateTicketStatusSchema = z.object({
   status: z.enum(ticketStatuses)
 });
 
+export const reviewPrioritySchema = z.object({
+  impact: z.enum(levels),
+  urgency: z.enum(levels),
+  reason: z.string().trim().min(5).max(280)
+});
+
 export const addTicketNoteSchema = z.object({
   content: z.string().trim().min(2).max(2000)
 });

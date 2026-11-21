@@ -374,29 +374,38 @@ export function App() {
     setTickets((current) => current.map((item) => item.id === updatedTicket.id ? { ...item, ...updatedTicket } : item));
   }
 
-  async function saveTicketStatus(event) {
+  async function saveTicketDecision(event) {
     event.preventDefault();
-    if (!ticketDetail || statusDraft === ticketDetail.status || detailMutationRef.current) return;
+    const isPriority = event.currentTarget.dataset.action === "priority";
+    if (!ticketDetail || detailMutationRef.current || (!isPriority && statusDraft === ticketDetail.status)) return;
+    const action = isPriority ? "priority" : "status";
+    const payload = isPriority ? Object.fromEntries(new FormData(event.currentTarget)) : { status: statusDraft };
+    const saved = isPriority ? "Triaje guardado." : "Estado guardado.";
+    if (isPriority && payload.impact === ticketDetail.impact && payload.urgency === ticketDetail.urgency) {
+      setDetailFeedback("");
+      setDetailError("Cambia el impacto o la urgencia para revisar el triaje.");
+      return;
+    }
     const revision = detailRevision.current;
     const mutation = { revision };
     detailMutationRef.current = mutation;
-    setDetailMutation("status");
+    setDetailMutation(action);
     setDetailError("");
     setDetailFeedback("");
     try {
-      const response = await requestJson(`/tickets/${ticketDetail.id}/status`, {
+      const response = await requestJson(`/tickets/${ticketDetail.id}/${action}`, {
         method: "PATCH",
-        body: JSON.stringify({ status: statusDraft })
+        body: JSON.stringify(payload)
       });
       if (revision !== detailRevision.current) return;
       setTicketDetail(response.data);
       mergeTicket(response.data);
-      setDetailFeedback("Estado guardado.");
+      setDetailFeedback(saved);
       try {
         const dashboardResponse = await requestJson("/dashboard");
         if (revision === detailRevision.current) setDashboard(dashboardResponse.data);
       } catch {
-        if (revision === detailRevision.current) setDetailFeedback("Estado guardado. Las métricas se actualizarán al recargar.");
+        if (revision === detailRevision.current) setDetailFeedback(saved + " Las métricas se actualizarán al recargar.");
       }
     } catch (statusError) {
       if (revision === detailRevision.current) setDetailError(statusError.message);
@@ -504,7 +513,7 @@ export function App() {
                 onCloseTicket={closeTicketDetail}
                 onRetryTicket={() => openTicketDetail(selectedTicketId, detailTriggerRef.current)}
                 onStatusDraftChange={setStatusDraft}
-                onSaveStatus={saveTicketStatus}
+                onSaveDecision={saveTicketDecision}
                 onNoteDraftChange={setNoteDraft}
                 onAddNote={addTicketNote}
               />
@@ -915,7 +924,7 @@ function TicketsView({
   onCloseTicket,
   onRetryTicket,
   onStatusDraftChange,
-  onSaveStatus,
+  onSaveDecision,
   onNoteDraftChange,
   onAddNote
 }) {
@@ -935,7 +944,7 @@ function TicketsView({
           onClose={onCloseTicket}
           onRetry={onRetryTicket}
           onStatusDraftChange={onStatusDraftChange}
-          onSaveStatus={onSaveStatus}
+          onSaveDecision={onSaveDecision}
           onNoteDraftChange={onNoteDraftChange}
           onAddNote={onAddNote}
         />
@@ -957,7 +966,7 @@ function TicketDetail({
   onClose,
   onRetry,
   onStatusDraftChange,
-  onSaveStatus,
+  onSaveDecision,
   onNoteDraftChange,
   onAddNote
 }) {
@@ -1043,7 +1052,7 @@ function TicketDetail({
           </section>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <form className="rounded-md border border-app-border p-3" onSubmit={onSaveStatus}>
+            <form className="rounded-md border border-app-border p-3" onSubmit={onSaveDecision}>
               <label className="block text-sm font-bold" htmlFor="ticket-status">Estado</label>
               <select id="ticket-status" className="mt-2 h-10 w-full rounded-md border border-app-border bg-white px-3 text-sm disabled:opacity-50" value={statusDraft} disabled={detailMutation !== null} onChange={(event) => onStatusDraftChange(event.target.value)}>
                 {ticketStatuses.map((status) => <option key={status} value={status}>{translate(status)}</option>)}
@@ -1065,6 +1074,43 @@ function TicketDetail({
               </button>
             </form>
           </div>
+
+          {ticket.canReviewPriority && (
+            <form key={`${ticket.id}-${ticket.impact}-${ticket.urgency}`} className="space-y-3 rounded-md border border-app-border p-3" data-action="priority" onSubmit={onSaveDecision}>
+              <h4 className="text-sm font-bold">Revisar triaje</h4>
+              <p className="text-sm text-app-secondary">La prioridad se recalcula a partir del impacto y la urgencia. El historial guarda el motivo de la decisión.</p>
+              <fieldset className="grid gap-3 sm:grid-cols-2" disabled={detailMutation !== null}>
+                <legend className="sr-only">Datos del triaje</legend>
+                {[["impact", "Impacto"], ["urgency", "Urgencia"]].map(([field, label]) => (
+                  <label key={field} className="block text-sm font-semibold">{label}
+                    <select name={field} defaultValue={ticket[field]} className="mt-1 block w-full rounded-md border border-app-border bg-white p-2">
+                      {["low", "medium", "high"].map(level => <option key={level} value={level}>{translate(level)}</option>)}
+                    </select>
+                  </label>
+                ))}
+                <label className="block text-sm font-semibold sm:col-span-2">Motivo (ficticio)
+                  <input name="reason" minLength={5} maxLength={280} required className="mt-1 block w-full rounded-md border border-app-border p-2" />
+                </label>
+                <button className="w-fit rounded-md bg-app-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" type="submit">
+                  {detailMutation === "priority" ? "Guardando..." : "Guardar triaje"}
+                </button>
+              </fieldset>
+            </form>
+          )}
+
+          {ticket.events?.length > 0 && (
+            <section aria-labelledby="ticket-events-title">
+              <h4 id="ticket-events-title" className="text-sm font-bold">Historial de cambios</h4>
+              <ol className="mt-2 space-y-2">
+                {ticket.events.map(item => (
+                  <li key={item.id} className="rounded-md bg-app-muted p-3 text-sm">
+                    <p className="break-words">{item.description}</p>
+                    <p className="mt-1 text-xs text-app-secondary">{formatDate(item.createdAt)}</p>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
 
           <section aria-labelledby="ticket-notes-title">
             <h4 id="ticket-notes-title" className="text-sm font-bold">Notas internas</h4>
