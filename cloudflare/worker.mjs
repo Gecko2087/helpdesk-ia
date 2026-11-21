@@ -1,7 +1,8 @@
-import { analyzeTicket, normalizeAiAnalysis } from '../server/src/services/ai.service.js';
+import { analyzeTicket } from '../server/src/services/ai.service.js';
+import { examples } from '../shared/demo-examples.js';
 import { calculatePriority } from '../server/src/utils/calculatePriority.js';
 import { categorySchema } from '../server/src/validators/category.validator.js';
-import { createTicketSchema, analyzeTicketSchema, addTicketNoteSchema, updateTicketStatusSchema, reviewPrioritySchema } from '../server/src/validators/ticket.validator.js';
+import { publicTicketSchema, analyzeTicketSchema, addTicketNoteSchema, updateTicketStatusSchema, reviewPrioritySchema } from '../server/src/validators/ticket.validator.js';
 
 const json = (data, status = 200, headers = {}) => Response.json(data, {
   status, headers: { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', ...headers },
@@ -12,6 +13,27 @@ const all = async (db, sql, ...values) => (await db.prepare(sql).bind(...values)
 const digest = async token => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))), byte => byte.toString(16).padStart(2, '0')).join('');
 const random = () => crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '');
 const timestamp = () => new Date().toISOString();
+const analysisFields = ['title', 'description', 'requesterName', 'requesterArea', 'sourceChannel'];
+const inputSignature = ticket => JSON.stringify(analysisFields.map(field => ticket[field] ?? ''));
+
+async function recordAnalysis(db, env, owner, input, model) {
+  const signature = inputSignature(input);
+  const example = examples.find(item => inputSignature(item) === signature &&
+    item.impact === input.impact && item.urgency === input.urgency);
+  const analyzedAt = timestamp();
+  let provider = 'demo';
+  if (example && env.GEMINI_API_KEY) {
+    const quota = await one(db, 'INSERT INTO DemoBudget(id,analyses) VALUES (?,1) ON CONFLICT(id) DO UPDATE SET analyses=analyses+1 WHERE analyses<20 RETURNING analyses', analyzedAt.slice(0, 10));
+    if (quota) provider = 'gemini';
+  }
+  const result = await analyzeTicket(provider === 'gemini' ? example : input, { provider, model, apiKey: env.GEMINI_API_KEY || '' });
+  const data = { ...result, analyzedAt, model: result.provider === 'gemini' ? model : null };
+  const analysisId = random();
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  await db.prepare('INSERT INTO TicketAnalysis(id,sandboxId,inputHash,proposal,expiresAt) VALUES (?,?,?,?,?)')
+    .bind(analysisId, owner, await digest(signature), JSON.stringify(data), expiresAt).run();
+  return json({ data, analysisId });
+}
 
 async function startSession(db, existing) {
   if (existing) return sessionResponse(existing.expiresAt);
@@ -90,13 +112,18 @@ async function tickets(db, owner, query = new URLSearchParams()) {
 async function ticketDetail(db, owner, id) {
   const row = await one(db, 'SELECT * FROM Ticket WHERE sandboxId=? AND id=?', owner, id);
   if (!row) return null;
-  const [groups, suggestedSteps, notes, events] = await Promise.all([
+  const [groups, suggestedSteps, notes, events, analysis] = await Promise.all([
     categories(db, owner),
     all(db, 'SELECT * FROM SuggestedStep WHERE ticketId=? ORDER BY "order"', id),
     all(db, 'SELECT * FROM TicketNote WHERE ticketId=? ORDER BY createdAt DESC,id DESC', id),
     all(db, 'SELECT * FROM TicketEvent WHERE ticketId=? ORDER BY createdAt,id', id),
+    row.analysisId && one(db, 'SELECT proposal FROM TicketAnalysis WHERE sandboxId=? AND id=?', owner, row.analysisId),
   ]);
-  return { ...row, canReviewPriority: true, category: groups.find(group => group.id === row.categoryId) ?? null, suggestedSteps, notes, events };
+  return {
+    ...row, canReviewPriority: true, category: groups.find(group => group.id === row.categoryId) ?? null,
+    suggestedSteps, notes, events: events.map(event => ({ ...event, details: event.details ? JSON.parse(event.details) : null })),
+    analysisProposal: analysis ? JSON.parse(analysis.proposal) : null,
+  };
 }
 
 async function reviewPriority(db, owner, id, input) {
@@ -104,10 +131,12 @@ async function reviewPriority(db, owner, id, input) {
   const priority = calculatePriority(impact, urgency);
   const now = timestamp();
   await db.batch([
-    db.prepare(`INSERT INTO TicketEvent(ticketId,type,description,createdAt)
-      SELECT id,'priority_reviewed','Triaje revisado (' || priority || ' → ' || ? || '). ' || ?,?
+    db.prepare(`INSERT INTO TicketEvent(ticketId,type,description,createdAt,details)
+      SELECT id,'priority_reviewed','Triaje revisado (' || priority || ' → ' || ? || '). ' || ?,?,
+        json_object('before',json_object('impact',impact,'urgency',urgency,'priority',priority),
+          'after',json_object('impact',?,'urgency',?,'priority',?),'reason',?)
       FROM Ticket WHERE id=? AND sandboxId=? AND (impact != ? OR urgency != ?)`)
-      .bind(priority, reason, now, id, owner, impact, urgency),
+      .bind(priority, reason, now, impact, urgency, priority, reason, id, owner, impact, urgency),
     db.prepare('UPDATE Ticket SET impact=?,urgency=?,priority=?,updatedAt=? WHERE id=? AND sandboxId=? AND (impact != ? OR urgency != ?)')
       .bind(impact, urgency, priority, now, id, owner, impact, urgency),
   ]);
@@ -116,24 +145,42 @@ async function reviewPriority(db, owner, id, input) {
 }
 
 async function createTicket(db, owner, input) {
-  const analysis = input.analysis ? normalizeAiAnalysis(input.analysis, input) : null;
+  const { analysisId, impact, urgency } = input;
+  let analysis = null;
+  if (analysisId) {
+    const record = await one(db, 'SELECT proposal,inputHash FROM TicketAnalysis WHERE id=? AND sandboxId=? AND expiresAt>?',
+      analysisId, owner, timestamp());
+    if (!record || record.inputHash !== await digest(inputSignature(input))) {
+      return error('El análisis venció o no coincide con el ticket. Volvé a analizarlo.', 409);
+    }
+    analysis = JSON.parse(record.proposal);
+  }
   const category = input.categoryId
     ? await one(db, 'SELECT id FROM Category WHERE sandboxId=? AND id=?', owner, input.categoryId)
     : analysis && await one(db, 'SELECT id FROM Category WHERE sandboxId=? AND name=?', owner, analysis.category);
   if (input.categoryId && !category) return error('Categoría no encontrada.', 404);
-  const impact = analysis?.impact ?? input.impact;
-  const urgency = analysis?.urgency ?? input.urgency;
-  const code = 'HD-' + random().slice(0, 32).toUpperCase();
+  const code = 'HD-' + (analysisId ?? random()).slice(0, 32).toUpperCase();
   const now = timestamp();
+  const categoryId = category?.id ?? null;
+  const priority = calculatePriority(impact, urgency);
+  const creationDecision = JSON.stringify({ initial: { impact, urgency, priority }, categoryId });
   const steps = analysis?.suggestedSteps?.length ? analysis.suggestedSteps : ['Registrar información inicial', 'Asignar responsable', 'Contactar al solicitante'];
-  await db.batch([
-    db.prepare(`INSERT INTO Ticket(sandboxId,code,title,description,requesterName,requesterArea,sourceChannel,priority,impact,urgency,categoryId,aiStatus,aiProvider,aiConfidence,summary,possibleCause,responsibleArea,suggestedReply,createdAt,updatedAt)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(owner, code, input.title, input.description, input.requesterName, input.requesterArea, input.sourceChannel, calculatePriority(impact, urgency), impact, urgency, category?.id ?? null, analysis ? (analysis.provider === 'gemini' ? 'analyzed' : 'demo') : 'not_analyzed', analysis?.provider ?? null, analysis?.confidence ?? null, analysis?.summary ?? null, analysis?.possibleCause ?? null, analysis?.responsibleArea ?? null, analysis?.suggestedReply ?? null, now, now),
-    ...steps.map((step, index) => db.prepare('INSERT INTO SuggestedStep(ticketId,"order",text) SELECT id,?,? FROM Ticket WHERE code=?').bind(index + 1, step, code)),
-    db.prepare("INSERT INTO TicketEvent(ticketId,type,description,createdAt) SELECT id,'created','Ticket creado.',? FROM Ticket WHERE code=?").bind(now, code),
+  const uninitialized = "code=? AND sandboxId=? AND NOT EXISTS (SELECT 1 FROM TicketEvent WHERE ticketId=Ticket.id AND type='created')";
+  const [inserted] = await db.batch([
+    db.prepare(`INSERT INTO Ticket(sandboxId,code,title,description,requesterName,requesterArea,sourceChannel,priority,impact,urgency,categoryId,aiStatus,aiProvider,aiConfidence,summary,possibleCause,responsibleArea,suggestedReply,createdAt,updatedAt,analysisId)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(code) DO NOTHING`).bind(owner, code, input.title, input.description, input.requesterName, input.requesterArea, input.sourceChannel, priority, impact, urgency, categoryId, analysis ? (analysis.provider === 'gemini' ? 'analyzed' : 'demo') : 'not_analyzed', analysis?.provider ?? null, analysis?.confidence ?? null, analysis?.summary ?? null, analysis?.possibleCause ?? null, analysis?.responsibleArea ?? null, analysis?.suggestedReply ?? null, now, now, analysisId ?? null),
+    ...steps.map((step, index) => db.prepare('INSERT INTO SuggestedStep(ticketId,"order",text) SELECT id,?,? FROM Ticket WHERE ' + uninitialized).bind(index + 1, step, code, owner)),
+    db.prepare("INSERT INTO TicketEvent(ticketId,type,description,createdAt,details) SELECT id,'created','Ticket creado.',?,? FROM Ticket WHERE " + uninitialized)
+      .bind(now, creationDecision, code, owner),
   ]);
-  const row = await one(db, 'SELECT id FROM Ticket WHERE code=? AND sandboxId=?', code, owner);
-  return json({ data: await ticketDetail(db, owner, row.id) }, 201);
+  const row = await one(db, 'SELECT id,analysisId FROM Ticket WHERE code=? AND sandboxId=?', code, owner);
+  if (!inserted.meta.changes) {
+    const event = row && await one(db, "SELECT details FROM TicketEvent WHERE ticketId=? AND type='created'", row.id);
+    if (!analysisId || row?.analysisId !== analysisId || event?.details !== creationDecision) {
+      return error('Este análisis ya está vinculado a otro triaje.', 409);
+    }
+  }
+  return json({ data: await ticketDetail(db, owner, row.id) }, inserted.meta.changes ? 201 : 200);
 }
 
 function dashboard(rows) {
@@ -166,21 +213,18 @@ async function route(request, env, url, owner, isAnalysis, model) {
   if (isAnalysis) {
     const input = await parse(request, analyzeTicketSchema);
     if (!input) return error('Datos inválidos.', 400);
-    const provider = env.GEMINI_API_KEY ? 'gemini' : 'demo';
-    if (provider === 'gemini') {
-      const quota = await one(db, 'INSERT INTO DemoBudget(id,analyses) VALUES (?,1) ON CONFLICT(id) DO UPDATE SET analyses=analyses+1 WHERE analyses<20 RETURNING analyses', timestamp().slice(0, 10));
-      if (!quota) return error('La demo alcanzó su cupo diario de análisis.', 429);
-    }
-    return json({ data: await analyzeTicket(input, { provider, model, apiKey: env.GEMINI_API_KEY || '' }) });
+    return recordAnalysis(db, env, owner, input, model);
   }
-  if (path === '/api/ai/status' && method === 'GET') return json({ provider: env.GEMINI_API_KEY ? 'gemini' : 'demo', model, demoMode: !env.GEMINI_API_KEY });
+  if (path === '/api/ai/status' && method === 'GET') return json({
+    provider: env.GEMINI_API_KEY ? 'gemini' : 'demo', model, demoMode: !env.GEMINI_API_KEY, verifiedAnalysis: true, syntheticOnly: true,
+  });
   if (path === '/api/dashboard' && method === 'GET') return json({ data: dashboard(await tickets(db, owner)) });
   if (path === '/api/tickets' && method === 'GET') {
     if ([...url.searchParams.values()].some(value => value.length > 160)) return error('Filtro inválido.', 400);
     return json({ data: await tickets(db, owner, url.searchParams) });
   }
   if (path === '/api/tickets' && method === 'POST') {
-    const input = await parse(request, createTicketSchema);
+    const input = await parse(request, publicTicketSchema);
     return input ? createTicket(db, owner, input) : error('Datos inválidos.', 400);
   }
   const ticket = path.match(/^\/api\/tickets\/(\d+)(?:\/(status|notes|priority))?$/);

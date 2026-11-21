@@ -158,4 +158,16 @@ describe("Gemini analysis service", () => {
     expect(analysis.provider).toBe("demo");
     expect(analysis.warning).toContain("modelo configurado no esta disponible");
   });
+
+  it("does not attribute incomplete JSON to Gemini", async () => {
+    const analysis = await analyzeTicket(ticket, {
+      provider: "gemini",
+      apiKey: "test-key",
+      model: "gemini-test",
+      generateContent: vi.fn().mockResolvedValue({ text: '{"summary":"Respuesta incompleta"}' })
+    });
+
+    expect(analysis.provider).toBe("demo");
+    expect(analysis.category).toBe("Red e Internet");
+  });
 });

@@ -1,0 +1,32 @@
+export const examples = [
+  {
+    label: 'CRM',
+    title: 'No puedo ingresar al CRM',
+    description: 'El sistema indica usuario bloqueado y no puedo trabajar desde esta mañana.',
+    requesterName: 'Usuario Demo',
+    requesterArea: 'Ventas',
+    sourceChannel: 'email',
+    impact: 'medium',
+    urgency: 'high',
+  },
+  {
+    label: 'Internet',
+    title: 'No tengo internet',
+    description: 'No tengo conexión a internet en mi computadora desde esta mañana.',
+    requesterName: 'Usuario Demo',
+    requesterArea: 'Administración',
+    sourceChannel: 'whatsapp',
+    impact: 'high',
+    urgency: 'medium',
+  },
+  {
+    label: 'Impresora',
+    title: 'Impresora no responde',
+    description: 'La impresora de administración no responde al enviar documentos.',
+    requesterName: 'Usuario Demo',
+    requesterArea: 'Administración',
+    sourceChannel: 'presencial',
+    impact: 'medium',
+    urgency: 'medium',
+  },
+];

@@ -31,6 +31,10 @@ export const createTicketSchema = z.object({
   analysis: analysisSchema
 });
 
+export const publicTicketSchema = createTicketSchema.omit({ analysis: true }).extend({
+  analysisId: z.string().regex(/^[a-f0-9]{64}$/).optional()
+});
+
 export const analyzeTicketSchema = z.object({
   title: z.string().trim().min(5).max(160),
   description: z.string().trim().min(20).max(8000),

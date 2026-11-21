@@ -23,6 +23,7 @@ import {
   PieChart,
   Pie
 } from "recharts";
+import { examples } from "../../shared/demo-examples.js";
 
 const TRANSLATIONS = {
   // Prioridades
@@ -114,38 +115,7 @@ const navItems = [
   { id: "docs", label: "Documentación", icon: FileText }
 ];
 
-const examples = [
-  {
-    label: "CRM",
-    title: "No puedo ingresar al CRM",
-    description: "El sistema indica usuario bloqueado y no puedo trabajar desde esta mañana.",
-    requesterName: "Usuario Demo",
-    requesterArea: "Ventas",
-    sourceChannel: "email",
-    impact: "medium",
-    urgency: "high"
-  },
-  {
-    label: "Internet",
-    title: "No tengo internet",
-    description: "No tengo conexión a internet en mi computadora desde esta mañana.",
-    requesterName: "Usuario Demo",
-    requesterArea: "Administración",
-    sourceChannel: "whatsapp",
-    impact: "high",
-    urgency: "medium"
-  },
-  {
-    label: "Impresora",
-    title: "Impresora no responde",
-    description: "La impresora de administración no responde al enviar documentos.",
-    requesterName: "Usuario Demo",
-    requesterArea: "Administración",
-    sourceChannel: "presencial",
-    impact: "medium",
-    urgency: "medium"
-  }
-];
+const analysisFields = ["title", "description", "requesterName", "requesterArea", "sourceChannel"];
 
 const emptyTicket = {
   title: "",
@@ -182,7 +152,7 @@ export function App() {
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [ticketForm, setTicketForm] = useState(emptyTicket);
-  const [analysis, setAnalysis] = useState(null);
+  const [analysisResult, setAnalysisResult] = useState(null);
   const [working, setWorking] = useState(false);
   const [selectedTicketId, setSelectedTicketId] = useState(null);
   const [ticketDetail, setTicketDetail] = useState(null);
@@ -204,9 +174,12 @@ export function App() {
   const hasLoaded = useRef(false);
 
   function updateTicketForm(nextForm) {
-    formRevision.current += 1;
+    const fields = aiStatus?.verifiedAnalysis ? analysisFields : [...analysisFields, "impact", "urgency"];
+    if (fields.some((field) => nextForm[field] !== ticketForm[field])) {
+      formRevision.current += 1;
+      setAnalysisResult(null);
+    }
     setTicketForm(nextForm);
-    setAnalysis(null);
   }
 
   const loadData = useCallback(async () => {
@@ -288,13 +261,13 @@ export function App() {
     const revision = formRevision.current;
     setWorking(true);
     setError("");
-    setAnalysis(null);
+    setAnalysisResult(null);
     try {
       const response = await requestJson("/tickets/analyze", {
         method: "POST",
         body: JSON.stringify(ticketForm)
       });
-      if (revision === formRevision.current) setAnalysis(response.data);
+      if (revision === formRevision.current) setAnalysisResult(response);
     } catch (analyzeError) {
       if (revision === formRevision.current) setError(analyzeError.message);
     } finally {
@@ -303,12 +276,16 @@ export function App() {
   }
 
   async function saveCurrentTicket() {
+    if (!analysisResult?.data || working) return;
+    const analysisInput = analysisResult.analysisId
+      ? { analysisId: analysisResult.analysisId }
+      : { analysis: analysisResult.data };
     setWorking(true);
     setError("");
     try {
       await requestJson("/tickets", {
         method: "POST",
-        body: JSON.stringify({ ...ticketForm, analysis })
+        body: JSON.stringify({ ...ticketForm, ...analysisInput })
       });
       updateTicketForm(emptyTicket);
       await loadData();
@@ -486,7 +463,7 @@ export function App() {
               <NewTicketView
                 form={ticketForm}
                 setForm={updateTicketForm}
-                analysis={analysis}
+                analysis={analysisResult?.data}
                 aiStatus={aiStatus}
                 categories={categories}
                 working={working}
@@ -716,7 +693,7 @@ function DashboardView({ dashboard, tickets, categories, aiStatus, onNewTicket }
           <h2 className="mt-1 text-xl font-bold text-app-text">Explorá una mesa de ayuda en funcionamiento</h2>
           <p className="mt-2 max-w-2xl text-sm text-app-secondary">
             Este espacio empieza con tres tickets de ejemplo y sus categorías. Revisá el tablero y probá el análisis con un caso ficticio.
-            {typeof aiStatus?.demoMode === "boolean" ? (aiStatus.demoMode ? " El modo demo usa reglas locales." : " Gemini está configurado para nuevos análisis; cada resultado indica el proveedor que respondió.") : " El estado del análisis no está disponible."}
+            {typeof aiStatus?.demoMode === "boolean" ? (aiStatus.demoMode ? " El modo demo usa reglas locales." : " Cada resultado indica el proveedor que respondió.") : " El estado del análisis no está disponible."}
           </p>
         </div>
         <button className="shrink-0 rounded-md bg-app-accent px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#14874b]" type="button" onClick={onNewTicket}>
@@ -882,6 +859,8 @@ function NewTicketView({ form, setForm, analysis, aiStatus, working, onAnalyze, 
             <p>El estado del análisis no está disponible. Volvé a cargar la página antes de analizar un caso.</p>
           ) : aiStatus.demoMode ? (
             <p>Modo demo: el análisis usa reglas locales y no envía el ticket a Gemini. Usá solo datos ficticios en este espacio público.</p>
+          ) : aiStatus.syntheticOnly ? (
+            <p>Gemini puede analizar los ejemplos preparados. Los casos escritos o modificados se analizan con reglas locales.</p>
           ) : (
             <p>
               Antes de analizar: usá solo datos ficticios. El título, la descripción, el área y otros detalles del caso se envían desde el servidor a Google Gemini.
@@ -892,7 +871,7 @@ function NewTicketView({ form, setForm, analysis, aiStatus, working, onAnalyze, 
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <button className="rounded-md bg-app-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={!canAnalyze || working || typeof aiStatus?.demoMode !== "boolean"} type="button" onClick={onAnalyze}>
-            {working ? "Procesando..." : aiStatus?.demoMode === true ? "Analizar con reglas" : aiStatus?.demoMode === false ? "Analizar con Gemini" : "Análisis no disponible"}
+            {working ? "Procesando..." : aiStatus?.demoMode === true ? "Analizar con reglas" : aiStatus?.demoMode === false ? "Analizar caso" : "Análisis no disponible"}
           </button>
           <button className="rounded-md border border-app-border px-4 py-2 text-sm font-semibold disabled:opacity-50" disabled={!analysis || working} type="button" onClick={onSave}>
             Guardar ticket
@@ -902,7 +881,12 @@ function NewTicketView({ form, setForm, analysis, aiStatus, working, onAnalyze, 
           </button>
         </div>
       </section>
-      <AnalysisPanel analysis={analysis} />
+      <AnalysisPanel
+        analysis={analysis}
+        onApply={aiStatus?.verifiedAnalysis && analysis && !working
+          ? () => setForm({ ...form, impact: analysis.impact, urgency: analysis.urgency })
+          : undefined}
+      />
     </div>
   );
 }
@@ -970,9 +954,10 @@ function TicketDetail({
   onNoteDraftChange,
   onAddNote
 }) {
+  const proposal = ticket?.analysisProposal;
   const provider = ticket?.aiStatus === "not_analyzed"
     ? "No analizado"
-    : ticket?.aiProvider === "gemini" ? "Gemini" : ticket?.aiProvider === "demo" ? "Reglas locales" : "No informado";
+    : getAnalysisProviderLabel(proposal?.provider ?? ticket?.aiProvider);
 
   return (
     <section className="mb-4 rounded-lg border border-app-accent bg-white p-4" aria-labelledby="ticket-detail-title">
@@ -1025,10 +1010,47 @@ function TicketDetail({
 
           <section className="rounded-md border border-app-border p-3" aria-labelledby="saved-analysis-title">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h4 id="saved-analysis-title" className="text-sm font-bold">Análisis guardado</h4>
-              <span className="rounded bg-app-muted px-2 py-1 text-xs font-semibold">Proveedor: {provider}</span>
+              <h4 id="saved-analysis-title" className="text-sm font-bold">{proposal ? "Propuesta original" : "Análisis guardado"}</h4>
+              <span className="rounded bg-app-muted px-2 py-1 text-xs font-semibold">
+                {!proposal && ticket.canReviewPriority && ticket.aiStatus !== "not_analyzed"
+                  ? "Proveedor histórico sin verificación"
+                  : `Proveedor: ${provider}`}
+              </span>
             </div>
-            {ticket.aiStatus === "not_analyzed" ? (
+            {proposal ? (
+              <>
+                <div className="mt-3 grid gap-3 rounded-md bg-app-muted p-3 text-sm sm:grid-cols-2">
+                  <div>
+                    <p className="mb-1 text-xs font-semibold uppercase text-app-secondary">Prioridad sugerida</p>
+                    <PriorityBadge priority={proposal.priority} />
+                    <p className="mt-1 text-app-secondary">{translate(proposal.impact)} / {translate(proposal.urgency)}</p>
+                  </div>
+                  <div>
+                    <p className="mb-1 text-xs font-semibold uppercase text-app-secondary">Prioridad actual</p>
+                    <PriorityBadge priority={ticket.priority} />
+                    <p className="mt-1 text-app-secondary">{translate(ticket.impact)} / {translate(ticket.urgency)}</p>
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-3 text-sm md:grid-cols-2">
+                  <DetailInfo label="Categoría sugerida" value={proposal.category} />
+                  <DetailInfo label="Confianza" value={translate(`${proposal.confidence}_confidence`)} />
+                  <DetailInfo label="Resumen" value={proposal.summary} />
+                  <DetailInfo label="Posible causa" value={proposal.possibleCause} />
+                  <DetailInfo label="Área responsable" value={proposal.responsibleArea} />
+                  <DetailInfo label="Respuesta sugerida" value={proposal.suggestedReply} />
+                  {proposal.model ? <DetailInfo label="Modelo" value={proposal.model} /> : null}
+                  {proposal.analyzedAt ? <DetailInfo label="Fecha del análisis" value={formatDate(proposal.analyzedAt)} /> : null}
+                  {proposal.suggestedSteps?.length ? (
+                    <div className="md:col-span-2">
+                      <p className="text-xs font-semibold uppercase text-app-secondary">Pasos sugeridos</p>
+                      <ol className="mt-1 list-decimal space-y-1 pl-5 text-app-text">
+                        {proposal.suggestedSteps.map((step, index) => <li key={index}>{step}</li>)}
+                      </ol>
+                    </div>
+                  ) : null}
+                </div>
+              </>
+            ) : ticket.aiStatus === "not_analyzed" ? (
               <p className="mt-2 text-sm text-app-secondary">Este ticket no tiene un análisis guardado.</p>
             ) : (
               <div className="mt-3 grid gap-3 text-sm md:grid-cols-2">
@@ -1104,7 +1126,17 @@ function TicketDetail({
               <ol className="mt-2 space-y-2">
                 {ticket.events.map(item => (
                   <li key={item.id} className="rounded-md bg-app-muted p-3 text-sm">
-                    <p className="break-words">{item.description}</p>
+                    {item.type === "priority_reviewed" && item.details?.before && item.details?.after ? (
+                      <>
+                        <p className="font-semibold">Triaje revisado</p>
+                        <p className="mt-1 break-words">
+                          {translate(item.details.before.priority)} → {translate(item.details.after.priority)}
+                          {" · "}Impacto {translate(item.details.before.impact)} → {translate(item.details.after.impact)}
+                          {" · "}Urgencia {translate(item.details.before.urgency)} → {translate(item.details.after.urgency)}
+                        </p>
+                        <p className="mt-1 break-words">{item.details.reason}</p>
+                      </>
+                    ) : <p className="break-words">{item.description}</p>}
                     <p className="mt-1 text-xs text-app-secondary">{formatDate(item.createdAt)}</p>
                   </li>
                 ))}
@@ -1317,7 +1349,9 @@ function AiConfigView({ aiStatus }) {
           ? "El estado del proveedor todavía no está disponible."
           : aiStatus.demoMode
             ? "Los análisis nuevos usan reglas locales. No representan respuestas de Gemini."
-            : "Los análisis nuevos intentan usar Gemini desde el servidor. Si el proveedor falla, la respuesta muestra el respaldo por reglas."}
+            : aiStatus.syntheticOnly
+              ? "Gemini procesa ejemplos preparados. Los casos personalizados y los ejemplos sin respuesta del proveedor usan reglas locales."
+              : "Los análisis nuevos intentan usar Gemini desde el servidor. Si el proveedor falla, la respuesta muestra el respaldo por reglas."}
         {" "}La clave se configura solo en el backend.
       </p>
     </section>
@@ -1329,12 +1363,18 @@ function DocsView() {
     <section className="rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle">
       <h2 className="text-base font-bold">Documentación del proyecto</h2>
       <p className="mt-2 text-sm text-app-secondary">Cada visitante recibe un espacio aislado de una hora con tres tickets ficticios. Podés analizar un ejemplo, guardar otro ticket y ver cómo cambia el tablero.</p>
-      <p className="mt-2 text-sm text-app-secondary">El modo demo genera sugerencias con reglas. Si Gemini está configurado, el servidor intenta enviar los datos del caso a Google y muestra el proveedor real en cada resultado. Revisá siempre la sugerencia antes de usarla.</p>
+      <p className="mt-2 text-sm text-app-secondary">Cada diagnóstico indica si se generó con reglas locales o Gemini. Revisá el impacto y la urgencia antes de guardar el ticket.</p>
     </section>
   );
 }
 
-function AnalysisPanel({ analysis }) {
+function getAnalysisProviderLabel(provider) {
+  if (provider === "gemini") return "Gemini";
+  if (provider === "demo") return "Reglas locales";
+  return "No informado";
+}
+
+function AnalysisPanel({ analysis, onApply }) {
   return (
     <section className="rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle">
       <div className="flex items-center gap-2">
@@ -1345,14 +1385,20 @@ function AnalysisPanel({ analysis }) {
         <p className="mt-3 text-sm text-app-secondary">Cargá un caso ficticio y presioná Analizar.</p>
       ) : (
         <div className="mt-4 space-y-3 text-sm">
-          <Info label="Proveedor" value={analysis.provider} />
+          <Info label="Proveedor" value={getAnalysisProviderLabel(analysis.provider)} />
           <Info label="Categoría" value={analysis.category} />
           <div className="flex flex-col gap-1">
-            <span className="text-xs font-semibold uppercase text-app-secondary">Prioridad</span>
+            <span className="text-xs font-semibold uppercase text-app-secondary">Prioridad sugerida</span>
             <div>
               <PriorityBadge priority={analysis.priority} />
             </div>
           </div>
+          <Info label="Impacto / urgencia sugeridos" value={`${translate(analysis.impact)} / ${translate(analysis.urgency)}`} />
+          {onApply ? (
+            <button className="rounded-md border border-app-border px-3 py-2 font-semibold hover:border-app-accent" type="button" onClick={onApply}>
+              Usar impacto y urgencia sugeridos
+            </button>
+          ) : null}
           <Info label="Confianza" value={translate(analysis.confidence + "_confidence")} />
           {analysis.warning ? <p className="rounded-md bg-app-muted p-3 text-app-high">{analysis.warning}</p> : null}
           <p className="text-app-secondary">{analysis.summary}</p>

@@ -39,6 +39,11 @@ export async function analyzeTicket(ticket, options = {}) {
     });
     const rawText = typeof response === "string" ? response : response.text;
     const parsed = parseGeminiJson(rawText);
+    const levels = ["low", "medium", "high"];
+    if (!allowedCategories.includes(parsed.category) || !levels.includes(parsed.impact) ||
+        !levels.includes(parsed.urgency) || typeof parsed.summary !== "string" || !parsed.summary.trim()) {
+      throw new Error("La respuesta de IA no tuvo los campos de triaje esperados.");
+    }
 
     return normalizeAiAnalysis(
       {
