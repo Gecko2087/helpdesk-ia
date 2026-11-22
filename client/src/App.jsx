@@ -644,7 +644,9 @@ function AiStatusIndicator({ aiStatus }) {
     <div className="flex items-center gap-2 rounded-md border border-app-border bg-app-surface px-3 py-2 text-sm text-app-text shadow-subtle">
       <span className={`h-2.5 w-2.5 rounded-full ${knownMode && !aiStatus.demoMode ? "bg-app-accent" : "bg-app-medium"}`} />
       <span className="font-semibold">{label}</span>
-      {aiStatus?.model ? <span className="hidden text-app-secondary sm:inline">{aiStatus.model}</span> : null}
+      {aiStatus?.demoMode === false && aiStatus.model
+        ? <span className="hidden text-app-secondary sm:inline">{aiStatus.model}</span>
+        : null}
     </div>
   );
 }
@@ -1340,8 +1342,8 @@ function AiConfigView({ aiStatus }) {
     <section className="rounded-lg border border-app-border bg-app-surface p-4 shadow-subtle">
       <h2 className="text-base font-bold">Configuración IA</h2>
       <dl className="mt-4 grid gap-3 text-sm md:grid-cols-3">
-        <Info label="Proveedor" value={aiStatus?.provider ?? "No configurado"} />
-        <Info label="Modelo" value={aiStatus?.model ?? "-"} />
+        <Info label="Proveedor" value={aiStatus?.provider ? getAnalysisProviderLabel(aiStatus.provider) : "No configurado"} />
+        <Info label="Modelo" value={aiStatus?.demoMode === false ? (aiStatus.model ?? "Sin datos") : "—"} />
         <Info label="Modo demo" value={typeof aiStatus?.demoMode === "boolean" ? (aiStatus.demoMode ? "Activo" : "Inactivo") : "Sin datos"} />
       </dl>
       <p className="mt-4 text-sm text-app-secondary">
